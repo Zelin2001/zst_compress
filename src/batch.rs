@@ -10,6 +10,7 @@ static S_ARCHILIST: &str = "_filelist.txt";
 static S_TOOL: &str = "zst_";
 static S_BIN: &str = "zst_bin";
 
+/// Compress or decompress all items in a folder
 pub fn batch_archive(compress: bool) -> () {
     // Add `./zst_bin/` to $PATH
     if compress {
@@ -39,6 +40,7 @@ pub fn batch_archive(compress: bool) -> () {
     }
 }
 
+/// Compress or decompress 1 item
 fn entry_archive(entry: DirEntry, compress: bool) -> () {
     match entry.file_name().to_str() {
         Some(f_name) => {
@@ -125,6 +127,7 @@ fn entry_archive(entry: DirEntry, compress: bool) -> () {
     }
 }
 
+/// Delete unneeded files, and print any error
 fn f_remove_print(f_name: &str, f_is_dir: bool) -> Result<(), std::io::Error> {
     if f_is_dir {
         match remove_dir_all(f_name) {
