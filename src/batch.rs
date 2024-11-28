@@ -1,5 +1,4 @@
 // TODO: Capture ^C
-
 use std::env::{current_dir, current_exe, set_var, var};
 use std::fs::{read_dir, remove_dir_all, remove_file, DirEntry, File};
 use std::io::prelude::*;
@@ -66,7 +65,9 @@ fn entry_archive(entry: DirEntry, compress: bool) -> () {
                     // Remove original file
                     let _ = f_remove_print(f_name, f_is_dir);
                     let f_list: &str = &format!("{}{}", f_ori, S_ARCHILIST);
-                    let _ = f_remove_print(f_list, f_is_dir);
+                    if f_is_dir {
+                        let _ = f_remove_print(f_list, f_is_dir);
+                    }
                 }
             }
             // Skip filelists and tools
