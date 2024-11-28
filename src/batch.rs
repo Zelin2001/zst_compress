@@ -9,18 +9,21 @@ use std::process::{Command, Stdio};
 static S_ARCHIVE: &str = ".tar.zst";
 static S_ARCHILIST: &str = "_filelist.txt";
 static S_TOOL: &str = "zst_";
+static S_BIN: &str = "zst_bin";
 
 pub fn batch_archive(compress: bool) -> () {
     // Add `./zst_bin/` to $PATH
     if compress {
         let mut path_bin = current_exe().unwrap().parent().unwrap().to_owned();
-        path_bin.push("zst_bin");
-        let path_all = path_bin.to_str().unwrap().to_string() + ":" + &(var("PATH").unwrap());
+        path_bin.push(S_BIN);
+        let mut path_all = path_bin.to_str().unwrap().to_string();
         if cfg!(target_os = "windows") {
-            set_var("Path", path_all);
+            path_all = path_all + ";";
         } else {
-            set_var("PATH", path_all);
+            path_all = path_all + ":";
         }
+        path_all = path_all + &(var("PATH").unwrap());
+        set_var("PATH", &path_all);
     }
 
     // Walk through videos
@@ -82,7 +85,7 @@ fn entry_archive(entry: DirEntry, compress: bool) -> () {
                         .arg(f_name)
                         .stdout(Stdio::piped())
                         .spawn()
-                        .expect(&format!("出错了! Failed to list files from {}", f_name));
+                        .expect(&format!("出错了! Failed to call eza;"));
 
                     let mut f_list = File::create(format!("{}{}", f_name, S_ARCHILIST))
                         .expect(&format!("出错了! Failed to create file: {}", f_name));
