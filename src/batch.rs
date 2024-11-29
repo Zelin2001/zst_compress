@@ -55,7 +55,7 @@ fn entry_archive(entry: DirEntry, compress: bool) -> () {
             {
                 // Decompress and clean
                 if !compress {
-                    print!("\nExtracting: {}", f_name);
+                    print!("Extracting: {}", f_name);
                     let f_ori: &str = &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()];
                     let mut do_compress = Command::new("tar")
                         .arg("-xf")
@@ -63,7 +63,7 @@ fn entry_archive(entry: DirEntry, compress: bool) -> () {
                         .spawn()
                         .expect(&format!("出错了! Failed to compress {}", f_name));
                     let _ = do_compress.wait();
-                    print!(" -> {}", f_ori);
+                    print!(" -> {}\n", f_ori);
 
                     // Remove original file
                     let _ = f_remove_print(f_name, false);
@@ -81,47 +81,49 @@ fn entry_archive(entry: DirEntry, compress: bool) -> () {
             }
             // Compress, mark the filelist and clean
             else {
-                // Make filelist
-                if entry.file_type().unwrap().is_dir() {
-                    let do_list = Command::new("eza")
-                        .arg("-lT")
-                        .arg("-L4")
-                        .arg(f_name)
-                        .stdout(Stdio::piped())
-                        .spawn()
-                        .expect(&format!("出错了! Failed to call eza;"));
+                if compress {
+                    // Make filelist
+                    if entry.file_type().unwrap().is_dir() {
+                        let do_list = Command::new("eza")
+                            .arg("-lT")
+                            .arg("-L4")
+                            .arg(f_name)
+                            .stdout(Stdio::piped())
+                            .spawn()
+                            .expect(&format!("出错了! Failed to call eza;"));
 
-                    let mut f_list = File::create(format!("{}{}", f_name, S_ARCHILIST))
-                        .expect(&format!("出错了! Failed to create file: {}", f_name));
-                    let mut buf = vec![];
-                    match do_list
-                        .stdout
-                        .expect("出错了! Failed to open stdout")
-                        .read_to_end(&mut buf)
-                    {
-                        Err(e) => {
-                            eprintln!("出错了! Error, couldn't read stdout: {}", e);
-                        }
-                        Ok(_) => {
-                            let _ = f_list.write_all(&buf);
+                        let mut f_list = File::create(format!("{}{}", f_name, S_ARCHILIST))
+                            .expect(&format!("出错了! Failed to create file: {}", f_name));
+                        let mut buf = vec![];
+                        match do_list
+                            .stdout
+                            .expect("出错了! Failed to open stdout")
+                            .read_to_end(&mut buf)
+                        {
+                            Err(e) => {
+                                eprintln!("出错了! Error, couldn't read stdout: {}", e);
+                            }
+                            Ok(_) => {
+                                let _ = f_list.write_all(&buf);
+                            }
                         }
                     }
+
+                    // Compress
+                    print!("Compressing: {}", f_name);
+                    let f_out = &format!("{}{}", f_name, S_ARCHIVE);
+                    let mut do_compress = Command::new("tar")
+                        .arg("-cf")
+                        .arg(f_out)
+                        .arg(f_name)
+                        .spawn()
+                        .expect(&format!("出错了! Failed to compress {}", f_name));
+                    let _ = do_compress.wait();
+                    print!(" -> {}\n", f_out);
+
+                    // Remove original file
+                    let _ = f_remove_print(f_name, f_is_dir);
                 }
-
-                // Compress
-                print!("\nCompressing: {}", f_name);
-                let f_out = &format!("{}{}", f_name, S_ARCHIVE);
-                let mut do_compress = Command::new("tar")
-                    .arg("-cf")
-                    .arg(f_out)
-                    .arg(f_name)
-                    .spawn()
-                    .expect(&format!("出错了! Failed to compress {}", f_name));
-                let _ = do_compress.wait();
-                print!(" -> {}", f_out);
-
-                // Remove original file
-                let _ = f_remove_print(f_name, f_is_dir);
             }
         }
         None => eprintln!("出错了! Error reading {:?}", entry.file_name()),
