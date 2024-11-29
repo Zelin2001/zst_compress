@@ -2,6 +2,7 @@
 use std::env::{current_dir, current_exe, set_var, var};
 use std::fs::{read_dir, remove_dir_all, remove_file, DirEntry, File};
 use std::io::prelude::*;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 // Set the skipped / selected patterns
@@ -65,10 +66,10 @@ fn entry_archive(entry: DirEntry, compress: bool) -> () {
                     print!(" -> {}", f_ori);
 
                     // Remove original file
-                    let _ = f_remove_print(f_name, f_is_dir);
+                    let _ = f_remove_print(f_name, false);
                     let f_list: &str = &format!("{}{}", f_ori, S_ARCHILIST);
-                    if f_is_dir {
-                        let _ = f_remove_print(f_list, f_is_dir);
+                    if Path::exists(Path::new(f_list)) {
+                        let _ = f_remove_print(f_list, false);
                     }
                 }
             }
