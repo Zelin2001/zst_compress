@@ -10,9 +10,13 @@ static S_ARCHIVE: &str = ".tar.zst";
 static S_ARCHILIST: &str = "_filelist.txt";
 static S_TOOL: &str = "zst_";
 static S_BIN: &str = "zst_bin";
+static RET_TAR_ERROR: u8 = 1;
+static RET_ITEM_ERROR: u8 = 2;
+static RET_DIR_ERROR: u8 = 3;
 
 /// Compress or decompress all items in a folder
-pub fn batch_archive(compress: bool) -> () {
+pub fn batch_archive(compress: bool) -> Result<(), u8> {
+    let mut ret = 0;
     // Add `./zst_bin/` to $PATH
     if compress {
         let mut path_bin = current_exe().unwrap().parent().unwrap().to_owned();
@@ -31,18 +35,30 @@ pub fn batch_archive(compress: bool) -> () {
     match read_dir(current_dir().unwrap()) {
         Ok(entries) => {
             for entry in entries {
-                match entry {
+                if match entry {
                     Ok(entry) => entry_archive(entry, compress),
-                    Err(e) => eprintln!("出错了! Error: {}", e),
+                    Err(e) => {
+                        eprintln!("出错了! Error: {}", e);
+                        Err(RET_DIR_ERROR)
+                    }
+                } != Ok(())
+                {
+                    ret = RET_ITEM_ERROR
                 }
             }
         }
         Err(e) => eprintln!("出错了! Error: {}", e),
     }
+
+    match ret {
+        0 => Ok(()),
+        _ => Err(ret),
+    }
 }
 
 /// Compress or decompress 1 item
-fn entry_archive(entry: DirEntry, compress: bool) -> () {
+fn entry_archive(entry: DirEntry, compress: bool) -> Result<(), u8> {
+    let mut ret = 0;
     match entry.file_name().to_str() {
         Some(f_name) => {
             // Check if is directory
@@ -66,12 +82,12 @@ fn entry_archive(entry: DirEntry, compress: bool) -> () {
                         Ok(out) => {
                             if out.status.code() != Some(0) {
                                 eprintln!("出错了! tar returned: {:?}", out.status.code());
-                                return;
+                                return Err(RET_TAR_ERROR);
                             }
                         }
                         Err(e) => {
                             eprintln!("出错了! Error with tar compression: {}", e);
-                            return;
+                            return Err(RET_TAR_ERROR);
                         }
                     }
                     print!(" -> {}\n", f_ori);
@@ -113,6 +129,7 @@ fn entry_archive(entry: DirEntry, compress: bool) -> () {
                         {
                             Err(e) => {
                                 eprintln!("出错了! Error, couldn't read stdout: {}", e);
+                                ret = RET_ITEM_ERROR;
                             }
                             Ok(_) => {
                                 let _ = f_list.write_all(&buf);
@@ -133,12 +150,12 @@ fn entry_archive(entry: DirEntry, compress: bool) -> () {
                         Ok(out) => {
                             if out.status.code() != Some(0) {
                                 eprintln!("出错了! tar returned: {:?}", out.status.code());
-                                return;
+                                return Err(RET_TAR_ERROR);
                             }
                         }
                         Err(e) => {
                             eprintln!("出错了! Error with tar compression: {}", e);
-                            return;
+                            return Err(RET_TAR_ERROR);
                         }
                     }
                     print!(" -> {}\n", f_out);
@@ -148,7 +165,15 @@ fn entry_archive(entry: DirEntry, compress: bool) -> () {
                 }
             }
         }
-        None => eprintln!("出错了! Error reading {:?}", entry.file_name()),
+        None => {
+            eprintln!("出错了! Error reading {:?}", entry.file_name());
+            return Err(RET_ITEM_ERROR);
+        }
+    }
+    
+    match ret {
+        0 => Ok(()),
+        ret => Err(ret)
     }
 }
 
