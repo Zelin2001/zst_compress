@@ -57,12 +57,23 @@ fn entry_archive(entry: DirEntry, compress: bool) -> () {
                 if !compress {
                     print!("Extracting: {}", f_name);
                     let f_ori: &str = &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()];
-                    let mut do_compress = Command::new("tar")
+                    let do_extract = Command::new("tar")
                         .arg("-xf")
                         .arg(f_name)
                         .spawn()
-                        .expect(&format!("出错了! Failed to compress {}", f_name));
-                    let _ = do_compress.wait();
+                        .expect(&format!("出错了! Failed to extract {}", f_name));
+                    match do_extract.wait_with_output() {
+                        Ok(out) => {
+                            if out.status.code() != Some(0) {
+                                eprintln!("出错了! tar returned: {:?}", out.status.code());
+                                return;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("出错了! Error with tar compression: {}", e);
+                            return;
+                        }
+                    }
                     print!(" -> {}\n", f_ori);
 
                     // Remove original file
@@ -112,13 +123,24 @@ fn entry_archive(entry: DirEntry, compress: bool) -> () {
                     // Compress
                     print!("Compressing: {}", f_name);
                     let f_out = &format!("{}{}", f_name, S_ARCHIVE);
-                    let mut do_compress = Command::new("tar")
+                    let do_compress = Command::new("tar")
                         .arg("-cf")
                         .arg(f_out)
                         .arg(f_name)
                         .spawn()
                         .expect(&format!("出错了! Failed to compress {}", f_name));
-                    let _ = do_compress.wait();
+                    match do_compress.wait_with_output() {
+                        Ok(out) => {
+                            if out.status.code() != Some(0) {
+                                eprintln!("出错了! tar returned: {:?}", out.status.code());
+                                return;
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("出错了! Error with tar compression: {}", e);
+                            return;
+                        }
+                    }
                     print!(" -> {}\n", f_out);
 
                     // Remove original file
