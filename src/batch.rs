@@ -1,7 +1,7 @@
 // TODO: Capture ^C
 use std::env::{current_dir, current_exe, set_var, var};
 use std::fs::{read_dir, remove_dir_all, remove_file, DirEntry, File};
-use std::io::prelude::*;
+use std::io::{prelude::*, stdout};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -72,6 +72,7 @@ fn entry_archive(entry: DirEntry, compress: bool) -> Result<(), u8> {
                 // Decompress and clean
                 if !compress {
                     print!("Extracting: {}", f_name);
+                    let _ = stdout().flush();
                     let f_ori: &str = &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()];
                     let do_extract = Command::new("tar")
                         .arg("-xf")
@@ -139,6 +140,7 @@ fn entry_archive(entry: DirEntry, compress: bool) -> Result<(), u8> {
 
                     // Compress
                     print!("Compressing: {}", f_name);
+                    let _ = stdout().flush();
                     let f_out = &format!("{}{}", f_name, S_ARCHIVE);
                     let do_compress = Command::new("tar")
                         .arg("-cf")
