@@ -141,6 +141,7 @@ fn entry_archive(entry: DirEntry, compress: bool) -> Result<(), u8> {
                     print!("Compressing: {}", f_name);
                     let f_out = &format!("{}{}", f_name, S_ARCHIVE);
                     let do_compress = Command::new("tar")
+                        .arg("--zstd")
                         .arg("-cf")
                         .arg(f_out)
                         .arg(f_name)
