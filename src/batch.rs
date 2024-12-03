@@ -164,6 +164,8 @@ fn entry_archive(entry: DirEntry, compress: bool) -> Result<(), u8> {
                     print!(" -> {}\n", f_out);
 
                     // Remove original file
+                    assert!(entry.path().exists());
+                    assert!(Path::new(f_out).is_file());
                     let _ = f_remove_print(f_name, f_is_dir);
                 }
             }
@@ -173,10 +175,10 @@ fn entry_archive(entry: DirEntry, compress: bool) -> Result<(), u8> {
             return Err(RET_ITEM_ERROR);
         }
     }
-    
+
     match ret {
         0 => Ok(()),
-        ret => Err(ret)
+        ret => Err(ret),
     }
 }
 
