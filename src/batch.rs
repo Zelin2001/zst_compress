@@ -8,7 +8,7 @@ use std::process::{Command, Stdio};
 static S_ARCHIVE: &str = ".tar.zst";
 static S_ARCHILIST: &str = "_filelist.txt";
 static S_TOOL: &str = "zst_";
-static S_BIN: &str = "zst_bin";
+static S_BIN: &str = ".bin";
 static RET_TAR_ERROR: u8 = 1;
 static RET_ITEM_ERROR: u8 = 2;
 static RET_DIR_ERROR: u8 = 3;
