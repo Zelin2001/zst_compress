@@ -1,4 +1,3 @@
-// TODO: Capture ^C
 use std::env::{current_dir, current_exe, set_var, var};
 use std::fs::{read_dir, remove_dir_all, remove_file, DirEntry, File};
 use std::io::{prelude::*, stdout};
@@ -57,7 +56,7 @@ pub fn batch_archive(compress: bool) -> Result<(), u8> {
 }
 
 /// Compress or decompress 1 item
-fn entry_archive(entry: DirEntry, compress: bool) -> Result<(), u8> {
+pub fn entry_archive(entry: DirEntry, compress: bool) -> Result<(), u8> {
     let mut ret = 0;
     match entry.file_name().to_str() {
         Some(f_name) => {
