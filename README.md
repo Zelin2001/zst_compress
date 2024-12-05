@@ -12,7 +12,7 @@
 
    - Put into the `.bin` folder `zstd.exe`, that can be downloaded from [here](https://github.com/facebook/zstd/releases).
 
-   - Put into the `.bin` folder `eza.exe`, that can be downloaded from [here](https://github.com/jimmycuadra/eza/releases).
+   - Put into the `.bin` folder `eza.exe`, that can be downloaded from [here](https://github.com/eza-community/eza/releases).
 
 2. Change directory to the archive folder you are working with, open windows terminal and run zst_compress.exe or zst_extract.exe with absolute path.
 
