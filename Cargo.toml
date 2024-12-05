@@ -2,5 +2,10 @@
 name = "zst_compress"
 version = "0.1.8"
 edition = "2021"
+description = "Helper tool for `tar --zstd`"
+documentation = "https://docs.rs/zst-compress"
+readme = "README.md"
+license = "GPL-2.0-or-later"
+categories = ["command-line-utilities"]
 
 [dependencies]
