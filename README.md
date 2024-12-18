@@ -21,3 +21,15 @@
 1. [Install](https://crates.io/crates/eza) `eza` with package manager of your choice.
 
 2. Put the binary files `zst_compress` and `zst_extract` in path and run them in desired working directories.
+
+# Usage
+
+```
+Usage: zst_extract.exe [OPTIONS]
+
+Options:
+  -p, --preserve         Preseve original files, do not delete
+  -t, --target <TARGET>  Target location for oprated files
+  -h, --help             Print help
+  -V, --version          Print version
+```

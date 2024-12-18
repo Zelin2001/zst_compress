@@ -1,6 +1,6 @@
-// TODO: Capture ^C
+use crate::runner::Args;
 use std::env::{current_dir, current_exe, set_var, var};
-use std::fs::{read_dir, remove_dir_all, remove_file, DirEntry, File};
+use std::fs::{read_dir, remove_dir_all, remove_file, File};
 use std::io::{prelude::*, stdout};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -9,13 +9,13 @@ use std::process::{Command, Stdio};
 static S_ARCHIVE: &str = ".tar.zst";
 static S_ARCHILIST: &str = "_filelist.txt";
 static S_TOOL: &str = "zst_";
-static S_BIN: &str = "zst_bin";
+static S_BIN: &str = ".bin";
 static RET_TAR_ERROR: u8 = 1;
 static RET_ITEM_ERROR: u8 = 2;
 static RET_DIR_ERROR: u8 = 3;
 
 /// Compress or decompress all items in a folder
-pub fn batch_archive(compress: bool) -> Result<(), u8> {
+pub fn batch_archive(args: Args, compress: bool) -> Result<(), u8> {
     let mut ret = 0;
     // Add `./zst_bin/` to $PATH
     if compress {
@@ -35,15 +35,25 @@ pub fn batch_archive(compress: bool) -> Result<(), u8> {
     match read_dir(current_dir().unwrap()) {
         Ok(entries) => {
             for entry in entries {
-                if match entry {
-                    Ok(entry) => entry_archive(entry, compress),
+                match entry {
+                    Ok(entry_file) => {
+                        if match entry_file.file_name().to_str() {
+                            Some(f_name) => {
+                                entry_archive(f_name, compress, args.preserve, args.target.clone())
+                            }
+                            None => {
+                                eprintln!("出错了! Error reading: {:?}", entry_file.file_name());
+                                return Err(RET_ITEM_ERROR);
+                            }
+                        } != Ok(())
+                        {
+                            ret = RET_ITEM_ERROR
+                        }
+                    }
                     Err(e) => {
                         eprintln!("出错了! Error: {}", e);
-                        Err(RET_DIR_ERROR)
+                        return Err(RET_DIR_ERROR);
                     }
-                } != Ok(())
-                {
-                    ret = RET_ITEM_ERROR
                 }
             }
         }
@@ -57,122 +67,156 @@ pub fn batch_archive(compress: bool) -> Result<(), u8> {
 }
 
 /// Compress or decompress 1 item
-fn entry_archive(entry: DirEntry, compress: bool) -> Result<(), u8> {
+pub fn entry_archive(
+    f_name: &str,
+    compress: bool,
+    preserve: bool,
+    target_dir: Option<String>,
+) -> Result<(), u8> {
     let mut ret = 0;
-    match entry.file_name().to_str() {
-        Some(f_name) => {
-            // Check if is directory
-            let f_is_dir = entry.file_type().unwrap().is_dir();
 
-            // Selected archive files
-            if (f_name.len() >= S_ARCHIVE.len()
-                && f_name.rfind(S_ARCHIVE) == Some(f_name.len() - S_ARCHIVE.len()))
-                && f_name.find(S_TOOL) != Some(0)
-            {
-                // Decompress and clean
-                if !compress {
-                    print!("Extract: {}", f_name);
-                    let _ = stdout().flush();
-                    let f_ori: &str = &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()];
-                    let do_extract = Command::new("tar")
-                        .arg("-xf")
-                        .arg(f_name)
-                        .spawn()
-                        .expect(&format!("出错了! Failed to extract {}", f_name));
-                    match do_extract.wait_with_output() {
-                        Ok(out) => {
-                            if out.status.code() != Some(0) {
-                                eprintln!("出错了! tar returned: {:?}", out.status.code());
-                                return Err(RET_TAR_ERROR);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("出错了! Error with tar compression: {}", e);
-                            return Err(RET_TAR_ERROR);
-                        }
-                    }
-                    print!(" -> {}\n", f_ori);
-
-                    // Remove original file
-                    let _ = f_remove_print(f_name, false);
-                    let f_list: &str = &format!("{}{}", f_ori, S_ARCHILIST);
-                    if Path::exists(Path::new(f_list)) {
-                        let _ = f_remove_print(f_list, false);
-                    }
-                }
-            }
-            // Skip filelists and tools
-            else if f_name.find(S_TOOL) == Some(0)
-                || (f_name.len() >= S_ARCHILIST.len()
-                    && f_name.rfind(S_ARCHILIST) == Some(f_name.len() - S_ARCHILIST.len()))
-            { // Do nothing
-            }
-            // Compress, mark the filelist and clean
-            else {
-                if compress {
-                    // Make filelist
-                    if entry.file_type().unwrap().is_dir() {
-                        let do_list = Command::new("eza")
-                            .arg("-lT")
-                            .arg("-L4")
-                            .arg(f_name)
-                            .stdout(Stdio::piped())
-                            .spawn()
-                            .expect(&format!("出错了! Failed to call eza;"));
-
-                        let mut f_list = File::create(format!("{}{}", f_name, S_ARCHILIST))
-                            .expect(&format!("出错了! Failed to create file: {}", f_name));
-                        let mut buf = vec![];
-                        match do_list
-                            .stdout
-                            .expect("出错了! Failed to open stdout")
-                            .read_to_end(&mut buf)
-                        {
-                            Err(e) => {
-                                eprintln!("出错了! Error, couldn't read stdout: {}", e);
-                                ret = RET_ITEM_ERROR;
-                            }
-                            Ok(_) => {
-                                let _ = f_list.write_all(&buf);
-                            }
-                        }
-                    }
-
-                    // Compress
-                    print!("Compress: {}", f_name);
-                    let _ = stdout().flush();
-                    let f_out = &format!("{}{}", f_name, S_ARCHIVE);
-                    let do_compress = Command::new("tar")
-                        .arg("--zstd")
-                        .arg("-cf")
-                        .arg(f_out)
-                        .arg(f_name)
-                        .spawn()
-                        .expect(&format!("出错了! Failed to compress {}", f_name));
-                    match do_compress.wait_with_output() {
-                        Ok(out) => {
-                            if out.status.code() != Some(0) {
-                                eprintln!("出错了! tar returned: {:?}", out.status.code());
-                                return Err(RET_TAR_ERROR);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("出错了! Error with tar compression: {}", e);
-                            return Err(RET_TAR_ERROR);
-                        }
-                    }
-                    print!(" -> {}\n", f_out);
-
-                    // Remove original file
-                    assert!(entry.path().exists());
-                    assert!(Path::new(f_out).is_file());
-                    let _ = f_remove_print(f_name, f_is_dir);
-                }
-            }
+    // Check if is directory
+    let f_is_dir = Path::new(f_name).is_dir();
+    // Add slash to target_dir
+    let target_dir = match target_dir {
+        Some(target)
+            if (target.rfind("\\") != Some(target.len() - 1) && cfg!(target_os = "windows")) =>
+        {
+            Some(target + "\\")
         }
-        None => {
-            eprintln!("出错了! Error reading {:?}", entry.file_name());
-            return Err(RET_ITEM_ERROR);
+        Some(target)
+            if (target.rfind("/") != Some(target.len() - 1) && !cfg!(target_os = "windows")) =>
+        {
+            Some(target + "/")
+        }
+        _ => target_dir,
+    };
+
+    // Skip filelists and tools
+    if f_name.find(S_TOOL) == Some(0)
+        || f_name.find(S_BIN) == Some(0)
+        || (f_name.len() >= S_ARCHILIST.len()
+            && f_name.rfind(S_ARCHILIST) == Some(f_name.len() - S_ARCHILIST.len()))
+    { // Do nothing
+    }
+    // Selected archive files
+    else if f_name.len() >= S_ARCHIVE.len()
+        && f_name.rfind(S_ARCHIVE) == Some(f_name.len() - S_ARCHIVE.len())
+    {
+        // Decompress and clean
+        if !compress {
+            print!("Extract: {}", f_name);
+            let _ = stdout().flush();
+            let f_ori: &str = match target_dir.clone() {
+                Some(target) => &(target + &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()]),
+                None => &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()],
+            };
+            let mut command = Command::new("tar");
+            let command = match target_dir.clone() {
+                Some(target) => command.arg("-xf").arg(f_name).arg("-C").arg(target),
+                None => command.arg("-xf").arg(f_name),
+            };
+            let do_extract = command
+                .spawn()
+                .expect(&format!("出错了! Failed to extract {}", f_name));
+
+            match do_extract.wait_with_output() {
+                Ok(out) => {
+                    if out.status.code() != Some(0) {
+                        eprintln!("出错了! tar returned: {:?}", out.status.code());
+                        return Err(RET_TAR_ERROR);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("出错了! Error with tar compression: {}", e);
+                    return Err(RET_TAR_ERROR);
+                }
+            }
+            print!(" -> {}\n", f_ori);
+
+            // Remove original file
+            if !preserve {
+                let _ = f_remove_print(f_name, false);
+                let f_list: &str = &format!("{}{}", f_ori, S_ARCHILIST);
+                if Path::exists(Path::new(f_list)) {
+                    let _ = f_remove_print(f_list, false);
+                }
+            }
+        } else {
+            println!("Skip: {}", f_name);
+        }
+    }
+    // Compress, mark the filelist and clean
+    else {
+        if compress {
+            // Make filelist
+            if f_is_dir {
+                let do_list = Command::new("eza")
+                    .arg("-lT")
+                    .arg("-L4")
+                    .arg(f_name)
+                    .stdout(Stdio::piped())
+                    .spawn()
+                    .expect(&format!("出错了! Failed to call eza;"));
+
+                let f_list_name = match target_dir.clone() {
+                    Some(target) => &format!("{}{}{}", target, f_name, S_ARCHILIST),
+                    None => &format!("{}{}", f_name, S_ARCHILIST),
+                };
+                let mut f_list = File::create(f_list_name)
+                    .expect(&format!("出错了! Failed to create file: {}", f_name));
+                let mut buf = vec![];
+                match do_list
+                    .stdout
+                    .expect("出错了! Failed to open stdout")
+                    .read_to_end(&mut buf)
+                {
+                    Err(e) => {
+                        eprintln!("出错了! Error, couldn't read stdout: {}", e);
+                        ret = RET_ITEM_ERROR;
+                    }
+                    Ok(_) => {
+                        let _ = f_list.write_all(&buf);
+                    }
+                }
+            }
+
+            // Compress
+            print!("Compress: {}", f_name);
+            let _ = stdout().flush();
+            let f_out: &str = match target_dir.clone() {
+                Some(target) => &format!("{}{}{}", target, f_name, S_ARCHIVE),
+                None => &format!("{}{}", f_name, S_ARCHIVE),
+            };
+            let do_compress = Command::new("tar")
+                .arg("--zstd")
+                .arg("-cf")
+                .arg(f_out)
+                .arg(f_name)
+                .spawn()
+                .expect(&format!("出错了! Failed to compress {}", f_name));
+            match do_compress.wait_with_output() {
+                Ok(out) => {
+                    if out.status.code() != Some(0) {
+                        eprintln!("出错了! tar returned: {:?}", out.status.code());
+                        return Err(RET_TAR_ERROR);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("出错了! Error with tar compression: {}", e);
+                    return Err(RET_TAR_ERROR);
+                }
+            }
+            print!(" -> {}\n", f_out);
+
+            // Remove original file
+            assert!(Path::new(f_name).exists());
+            assert!(Path::new(f_out).is_file());
+            if !preserve {
+                let _ = f_remove_print(f_name, f_is_dir);
+            }
+        } else {
+            println!("Skip: {}", f_name);
         }
     }
 
