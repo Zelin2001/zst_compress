@@ -1,3 +1,4 @@
+use crate::runner::Args;
 use std::env::{current_dir, current_exe, set_var, var};
 use std::fs::{read_dir, remove_dir_all, remove_file, File};
 use std::io::{prelude::*, stdout};
@@ -14,7 +15,7 @@ static RET_ITEM_ERROR: u8 = 2;
 static RET_DIR_ERROR: u8 = 3;
 
 /// Compress or decompress all items in a folder
-pub fn batch_archive(compress: bool) -> Result<(), u8> {
+pub fn batch_archive(args: Args, compress: bool) -> Result<(), u8> {
     let mut ret = 0;
     // Add `./zst_bin/` to $PATH
     if compress {
@@ -37,7 +38,9 @@ pub fn batch_archive(compress: bool) -> Result<(), u8> {
                 match entry {
                     Ok(entry_file) => {
                         if match entry_file.file_name().to_str() {
-                            Some(f_name) => entry_archive(f_name, compress),
+                            Some(f_name) => {
+                                entry_archive(f_name, compress, args.preserve, args.target.clone())
+                            }
                             None => {
                                 eprintln!("出错了! Error reading: {:?}", entry_file.file_name());
                                 return Err(RET_ITEM_ERROR);
@@ -64,11 +67,30 @@ pub fn batch_archive(compress: bool) -> Result<(), u8> {
 }
 
 /// Compress or decompress 1 item
-pub fn entry_archive(f_name: &str, compress: bool) -> Result<(), u8> {
+pub fn entry_archive(
+    f_name: &str,
+    compress: bool,
+    preserve: bool,
+    target_dir: Option<String>,
+) -> Result<(), u8> {
     let mut ret = 0;
 
     // Check if is directory
     let f_is_dir = Path::new(f_name).is_dir();
+    // Add slash to target_dir
+    let target_dir = match target_dir {
+        Some(target)
+            if (target.rfind("\\") != Some(target.len() - 1) && cfg!(target_os = "windows")) =>
+        {
+            Some(target + "\\")
+        }
+        Some(target)
+            if (target.rfind("/") != Some(target.len() - 1) && !cfg!(target_os = "windows")) =>
+        {
+            Some(target + "/")
+        }
+        _ => target_dir,
+    };
 
     // Skip filelists and tools
     if f_name.find(S_TOOL) == Some(0)
@@ -85,12 +107,19 @@ pub fn entry_archive(f_name: &str, compress: bool) -> Result<(), u8> {
         if !compress {
             print!("Extract: {}", f_name);
             let _ = stdout().flush();
-            let f_ori: &str = &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()];
-            let do_extract = Command::new("tar")
-                .arg("-xf")
-                .arg(f_name)
+            let f_ori: &str = match target_dir.clone() {
+                Some(target) => &(target + &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()]),
+                None => &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()],
+            };
+            let mut command = Command::new("tar");
+            let command = match target_dir.clone() {
+                Some(target) => command.arg("-xf").arg(f_name).arg("-C").arg(target),
+                None => command.arg("-xf").arg(f_name),
+            };
+            let do_extract = command
                 .spawn()
                 .expect(&format!("出错了! Failed to extract {}", f_name));
+
             match do_extract.wait_with_output() {
                 Ok(out) => {
                     if out.status.code() != Some(0) {
@@ -106,10 +135,12 @@ pub fn entry_archive(f_name: &str, compress: bool) -> Result<(), u8> {
             print!(" -> {}\n", f_ori);
 
             // Remove original file
-            let _ = f_remove_print(f_name, false);
-            let f_list: &str = &format!("{}{}", f_ori, S_ARCHILIST);
-            if Path::exists(Path::new(f_list)) {
-                let _ = f_remove_print(f_list, false);
+            if !preserve {
+                let _ = f_remove_print(f_name, false);
+                let f_list: &str = &format!("{}{}", f_ori, S_ARCHILIST);
+                if Path::exists(Path::new(f_list)) {
+                    let _ = f_remove_print(f_list, false);
+                }
             }
         } else {
             println!("Skip: {}", f_name);
@@ -128,7 +159,11 @@ pub fn entry_archive(f_name: &str, compress: bool) -> Result<(), u8> {
                     .spawn()
                     .expect(&format!("出错了! Failed to call eza;"));
 
-                let mut f_list = File::create(format!("{}{}", f_name, S_ARCHILIST))
+                let f_list_name = match target_dir.clone() {
+                    Some(target) => &format!("{}{}{}", target, f_name, S_ARCHILIST),
+                    None => &format!("{}{}", f_name, S_ARCHILIST),
+                };
+                let mut f_list = File::create(f_list_name)
                     .expect(&format!("出错了! Failed to create file: {}", f_name));
                 let mut buf = vec![];
                 match do_list
@@ -149,7 +184,10 @@ pub fn entry_archive(f_name: &str, compress: bool) -> Result<(), u8> {
             // Compress
             print!("Compress: {}", f_name);
             let _ = stdout().flush();
-            let f_out = &format!("{}{}", f_name, S_ARCHIVE);
+            let f_out: &str = match target_dir.clone() {
+                Some(target) => &format!("{}{}{}", target, f_name, S_ARCHIVE),
+                None => &format!("{}{}", f_name, S_ARCHIVE),
+            };
             let do_compress = Command::new("tar")
                 .arg("--zstd")
                 .arg("-cf")
@@ -174,7 +212,9 @@ pub fn entry_archive(f_name: &str, compress: bool) -> Result<(), u8> {
             // Remove original file
             assert!(Path::new(f_name).exists());
             assert!(Path::new(f_out).is_file());
-            let _ = f_remove_print(f_name, f_is_dir);
+            if !preserve {
+                let _ = f_remove_print(f_name, f_is_dir);
+            }
         } else {
             println!("Skip: {}", f_name);
         }
