@@ -28,7 +28,10 @@
 Usage: zst_extract.exe [OPTIONS]
 
 Options:
-  -p, --preserve         Preseve original files, do not delete
+  -p, --preserve         Preseve original files after compression
+  -f, --flag             Leave flag text pointing to compression target
+  -i, --input <INPUT>    Select a single input file
+  -x                     Implement extraction for zst_compress binary
   -t, --target <TARGET>  Target location for oprated files
   -h, --help             Print help
   -V, --version          Print version

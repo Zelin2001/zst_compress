@@ -7,7 +7,8 @@ use std::process::{Command, Stdio};
 
 // Set the skipped / selected patterns
 static S_ARCHIVE: &str = ".tar.zst";
-static S_ARCHILIST: &str = "_filelist.txt";
+static S_ARCHILIST: &str = "_archived-filelist.txt";
+static S_FLAG_MESSAGE: &str = "_archived-message.txt";
 static S_TOOL: &str = "zst_";
 static S_BIN: &str = ".bin";
 static RET_TAR_ERROR: u8 = 1;
@@ -31,33 +32,50 @@ pub fn batch_archive(args: Args, compress: bool) -> Result<(), u8> {
         set_var("PATH", &path_all);
     }
 
-    // Walk through videos
-    match read_dir(current_dir().unwrap()) {
-        Ok(entries) => {
-            for entry in entries {
-                match entry {
-                    Ok(entry_file) => {
-                        if match entry_file.file_name().to_str() {
-                            Some(f_name) => {
-                                entry_archive(f_name, compress, args.preserve, args.target.clone())
+    match args.input {
+        None => {
+            // Walk through videos
+            match read_dir(current_dir().unwrap()) {
+                Ok(entries) => {
+                    for entry in entries {
+                        match entry {
+                            Ok(entry_file) => {
+                                if match entry_file.file_name().to_str() {
+                                    Some(f_name) => entry_archive(
+                                        f_name,
+                                        compress,
+                                        args.preserve,
+                                        args.flag,
+                                        args.target.clone(),
+                                    ),
+                                    None => {
+                                        eprintln!(
+                                            "出错了! Error reading: {:?}",
+                                            entry_file.file_name()
+                                        );
+                                        return Err(RET_ITEM_ERROR);
+                                    }
+                                } != Ok(())
+                                {
+                                    ret = RET_ITEM_ERROR
+                                }
                             }
-                            None => {
-                                eprintln!("出错了! Error reading: {:?}", entry_file.file_name());
-                                return Err(RET_ITEM_ERROR);
+                            Err(e) => {
+                                eprintln!("出错了! Error: {}", e);
+                                return Err(RET_DIR_ERROR);
                             }
-                        } != Ok(())
-                        {
-                            ret = RET_ITEM_ERROR
                         }
                     }
-                    Err(e) => {
-                        eprintln!("出错了! Error: {}", e);
-                        return Err(RET_DIR_ERROR);
-                    }
                 }
+                Err(e) => eprintln!("出错了! Error: {}", e),
             }
         }
-        Err(e) => eprintln!("出错了! Error: {}", e),
+        Some(s) => {
+            if entry_archive(&s, compress, args.preserve, args.flag, args.target.clone()) != Ok(())
+            {
+                ret = RET_ITEM_ERROR
+            }
+        }
     }
 
     match ret {
@@ -71,6 +89,7 @@ pub fn entry_archive(
     f_name: &str,
     compress: bool,
     preserve: bool,
+    flag: bool,
     target_dir: Option<String>,
 ) -> Result<(), u8> {
     let mut ret = 0;
@@ -97,6 +116,8 @@ pub fn entry_archive(
         || f_name.find(S_BIN) == Some(0)
         || (f_name.len() >= S_ARCHILIST.len()
             && f_name.rfind(S_ARCHILIST) == Some(f_name.len() - S_ARCHILIST.len()))
+        || (f_name.len() >= S_FLAG_MESSAGE.len()
+            && f_name.rfind(S_FLAG_MESSAGE) == Some(f_name.len() - S_FLAG_MESSAGE.len()))
     { // Do nothing
     }
     // Selected archive files
@@ -140,6 +161,10 @@ pub fn entry_archive(
                 let f_list: &str = &format!("{}{}", f_ori, S_ARCHILIST);
                 if Path::exists(Path::new(f_list)) {
                     let _ = f_remove_print(f_list, false);
+                }
+                let f_id: &str = &format!("{}{}", f_ori, S_FLAG_MESSAGE);
+                if Path::exists(Path::new(f_id)) {
+                    let _ = f_remove_print(f_id, false);
                 }
             }
         } else {
@@ -208,6 +233,25 @@ pub fn entry_archive(
                 }
             }
             print!(" -> {}\n", f_out);
+
+            // Write the indicator text message
+            if flag {
+                let f_name_id = f_name.to_owned() + S_FLAG_MESSAGE;
+                let mut f_id = File::create(&f_name_id)
+                    .expect(&format!("出错了! Failed to create file: {}", &f_name_id));
+                let message = format!(
+                    "- 这是一则数据整理的消息
+
+- 原数据已经压缩，可能移动到新位置: 
+  {}
+",
+                    f_out
+                );
+                f_id.write_all(message.as_bytes()).expect(&format!(
+                    "出错了! Failed to write into file: {}",
+                    &f_name_id
+                ));
+            }
 
             // Remove original file
             assert!(Path::new(f_name).exists());
