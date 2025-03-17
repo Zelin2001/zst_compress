@@ -32,6 +32,11 @@ pub fn batch_archive(args: Args, compress: bool) -> Result<(), u8> {
         set_var("PATH", &path_all);
     }
 
+    let level_tree = match args.level {
+        Some(level) => level as u8,
+        None => 4,
+    };
+
     match args.input {
         None => {
             // Walk through videos
@@ -46,6 +51,7 @@ pub fn batch_archive(args: Args, compress: bool) -> Result<(), u8> {
                                         compress,
                                         args.preserve,
                                         args.flag,
+                                        level_tree,
                                         args.target.clone(),
                                     ),
                                     None => {
@@ -71,7 +77,14 @@ pub fn batch_archive(args: Args, compress: bool) -> Result<(), u8> {
             }
         }
         Some(s) => {
-            if entry_archive(&s, compress, args.preserve, args.flag, args.target.clone()) != Ok(())
+            if entry_archive(
+                &s,
+                compress,
+                args.preserve,
+                args.flag,
+                level_tree,
+                args.target.clone(),
+            ) != Ok(())
             {
                 ret = RET_ITEM_ERROR
             }
@@ -90,6 +103,7 @@ pub fn entry_archive(
     compress: bool,
     preserve: bool,
     flag: bool,
+    level_tree: u8,
     target_dir: Option<String>,
 ) -> Result<(), u8> {
     let mut ret = 0;
@@ -178,7 +192,7 @@ pub fn entry_archive(
             if f_is_dir {
                 let do_list = Command::new("eza")
                     .arg("-lT")
-                    .arg("-L4")
+                    .arg(format!("-L{}", level_tree))
                     .arg(f_name)
                     .stdout(Stdio::piped())
                     .spawn()

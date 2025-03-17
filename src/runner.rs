@@ -22,6 +22,10 @@ pub struct Args {
     #[arg(short)]
     pub x: bool,
 
+    /// Select recursive level for eza, default to 4
+    #[arg(short, long)]
+    pub level: Option<u8>,
+
     /// Target location for oprated files
     #[arg(short, long)]
     pub target: Option<String>,

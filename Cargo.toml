@@ -1,6 +1,6 @@
 [package]
 name = "zst_compress"
-version = "0.1.10"
+version = "0.1.11"
 edition = "2021"
 description = "Helper tool for `tar --zstd`"
 documentation = "https://docs.rs/zst-compress"
