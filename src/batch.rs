@@ -3,7 +3,6 @@ use std::env::current_dir;
 use std::fs::{File, read_dir, remove_dir_all, remove_file};
 use std::io::{prelude::*, stdout};
 use std::path::Path;
-use std::process::{Command, Stdio};
 
 // Set the skipped / selected patterns
 static S_ARCHIVE: &str = ".tar.zst";
@@ -165,7 +164,7 @@ pub fn entry_archive(
                     None => &format!("{}{}", f_name, S_ARCHILIST),
                 };
 
-                if let Err(e) = generate_directory_listing(f_name, f_list_name, level_tree) {
+                if let Err(e) = dir_listing::generate_listing(f_name, f_list_name, level_tree) {
                     eprintln!("出错了! Error generating directory listing: {}", e);
                     ret = RET_ITEM_ERROR;
                 }
@@ -273,6 +272,8 @@ fn do_archive(f_name: &str, target: &str, compress: bool) -> Result<(), u8> {
             .finish()
             .map_err(|_| RET_TAR_ERROR)?;
     } else {
+        // TODO: Fix the decompression error
+
         // Decompress - open input file
         let input_file = File::open(path).map_err(|_| RET_TAR_ERROR)?;
 
@@ -289,44 +290,134 @@ fn do_archive(f_name: &str, target: &str, compress: bool) -> Result<(), u8> {
     Ok(())
 }
 
-/// Generate a directory listing using eza command
-fn generate_directory_listing(
-    dir_path: &str,
-    output_path: &str,
-    level_tree: u8,
-) -> Result<(), std::io::Error> {
-    let mut f_list = File::create(output_path)?;
+/// Listing files in a directory to be compressed
+mod dir_listing {
+    use std::fs::{self, DirEntry};
+    use std::io::{self, Write};
+    use std::path::Path;
+    use std::time::SystemTime;
 
-    let do_list = Command::new("eza")
-        .arg("-lT")
-        .arg(format!("-L{}", level_tree))
-        .arg(output_path)
-        .stdout(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Failed to call eza: {}", e),
-            )
-        })?;
+    pub fn generate_listing(
+        dir_path: &str,
+        output_path: &str,
+        max_depth: u8,
+    ) -> Result<(), io::Error> {
+        let mut output = fs::File::create(output_path)?;
+        list_directory(dir_path, &mut output, max_depth, 0)
+    }
 
-    let mut buf = vec![];
-    match do_list
-        .stdout
-        .ok_or(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Failed to open stdout",
-        ))?
-        .read_to_end(&mut buf)
-    {
-        Err(e) => Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Couldn't read stdout: {}", e),
-        )),
-        Ok(_) => {
-            f_list.write_all(&buf)?;
+    fn list_directory(
+        path: &str,
+        output: &mut fs::File,
+        max_depth: u8,
+        current_depth: u8,
+    ) -> io::Result<()> {
+        if current_depth > max_depth {
+            return Ok(());
+        }
+
+        let entries = fs::read_dir(path)?;
+        let mut entries: Vec<DirEntry> = entries.filter_map(Result::ok).collect();
+        entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+
+        for entry in entries {
+            let metadata = entry.metadata()?;
+            let file_type = metadata.file_type();
+            let file_name = entry.file_name();
+            let file_name = file_name.to_string_lossy();
+
+            // Skip hidden files/directories
+            if file_name.starts_with('.') {
+                continue;
+            }
+
+            // Tree prefix with proper characters
+            let tree_prefix = if current_depth == 0 {
+                String::new()
+            } else {
+                let mut prefix = String::new();
+                for i in 0..current_depth {
+                    if i == current_depth - 1 {
+                        prefix.push_str("└──");
+                    } else {
+                        prefix.push_str("│  ");
+                    }
+                }
+                prefix
+            };
+
+            let size = if file_type.is_dir() {
+                let dir_size = dir_size(&entry.path())?;
+                format!("{:>10}", human_size(dir_size))
+            } else {
+                let file_size = metadata.len();
+                format!("{:>10}", human_size(file_size))
+            };
+
+            let modified = metadata.modified()?;
+            let modified = system_time_to_date_time(modified);
+
+            // Format with date and size on left, tree on right
+            writeln!(
+                output,
+                "{:<19} {:>10} {}{} {}",
+                modified,
+                size,
+                tree_prefix,
+                if file_type.is_dir() { "┬" } else { "─" },
+                file_name
+            )?;
+
+            if file_type.is_dir() {
+                list_directory(
+                    entry.path().to_str().unwrap(),
+                    output,
+                    max_depth,
+                    current_depth + 1,
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn dir_size(path: &Path) -> io::Result<u64> {
+        fn walk_dir(path: &Path, total: &mut u64) -> io::Result<()> {
+            for entry in fs::read_dir(path)? {
+                let entry = entry?;
+                let metadata = entry.metadata()?;
+
+                if metadata.is_dir() {
+                    walk_dir(&entry.path(), total)?;
+                } else {
+                    *total += metadata.len();
+                }
+            }
             Ok(())
         }
+
+        let mut total = 0;
+        walk_dir(path, &mut total)?;
+        Ok(total)
+    }
+
+    fn human_size(size: u64) -> String {
+        const UNITS: [&str; 6] = ["B", "KB", "MB", "GB", "TB", "PB"];
+        let mut size = size as f64;
+        let mut unit_idx = 0;
+
+        while size >= 1024.0 && unit_idx < UNITS.len() - 1 {
+            size /= 1024.0;
+            unit_idx += 1;
+        }
+
+        format!("{:.1}{}", size, UNITS[unit_idx])
+    }
+
+    fn system_time_to_date_time(time: SystemTime) -> String {
+        use chrono::{DateTime, Local};
+        let datetime: DateTime<Local> = time.into();
+        datetime.format("%Y-%m-%d %H:%M:%S").to_string()
     }
 }
 
