@@ -1,6 +1,6 @@
 use crate::runner::Args;
-use std::env::{current_dir, current_exe, set_var, var};
-use std::fs::{read_dir, remove_dir_all, remove_file, File};
+use std::env::current_dir;
+use std::fs::{File, read_dir, remove_dir_all, remove_file};
 use std::io::{prelude::*, stdout};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -18,20 +18,6 @@ static RET_DIR_ERROR: u8 = 3;
 /// Compress or decompress all items in a folder
 pub fn batch_archive(args: Args, compress: bool) -> Result<(), u8> {
     let mut ret = 0;
-    // Add `./zst_bin/` to $PATH
-    if compress {
-        let mut path_bin = current_exe().unwrap().parent().unwrap().to_owned();
-        path_bin.push(S_BIN);
-        let mut path_all = path_bin.to_str().unwrap().to_string();
-        if cfg!(target_os = "windows") {
-            path_all = path_all + ";";
-        } else {
-            path_all = path_all + ":";
-        }
-        path_all = path_all + &(var("PATH").unwrap());
-        set_var("PATH", &path_all);
-    }
-
     let level_tree = match args.level {
         Some(level) => level as u8,
         None => 4,
@@ -146,26 +132,10 @@ pub fn entry_archive(
                 Some(target) => &(target + &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()]),
                 None => &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()],
             };
-            let mut command = Command::new("tar");
-            let command = match target_dir.clone() {
-                Some(target) => command.arg("-xf").arg(f_name).arg("-C").arg(target),
-                None => command.arg("-xf").arg(f_name),
-            };
-            let do_extract = command
-                .spawn()
-                .expect(&format!("出错了! Failed to extract {}", f_name));
-
-            match do_extract.wait_with_output() {
-                Ok(out) => {
-                    if out.status.code() != Some(0) {
-                        eprintln!("出错了! tar returned: {:?}", out.status.code());
-                        return Err(RET_TAR_ERROR);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("出错了! Error with tar compression: {}", e);
-                    return Err(RET_TAR_ERROR);
-                }
+            let target_dir_str = target_dir.as_deref().unwrap_or("");
+            if let Err(_) = do_archive(f_name, target_dir_str, false) {
+                eprintln!("出错了! Failed to extract {}", f_name);
+                return Err(RET_TAR_ERROR);
             }
             print!(" -> {}\n", f_ori);
 
@@ -190,33 +160,14 @@ pub fn entry_archive(
         if compress {
             // Make filelist
             if f_is_dir {
-                let do_list = Command::new("eza")
-                    .arg("-lT")
-                    .arg(format!("-L{}", level_tree))
-                    .arg(f_name)
-                    .stdout(Stdio::piped())
-                    .spawn()
-                    .expect(&format!("出错了! Failed to call eza;"));
-
                 let f_list_name = match target_dir.clone() {
                     Some(target) => &format!("{}{}{}", target, f_name, S_ARCHILIST),
                     None => &format!("{}{}", f_name, S_ARCHILIST),
                 };
-                let mut f_list = File::create(f_list_name)
-                    .expect(&format!("出错了! Failed to create file: {}", f_name));
-                let mut buf = vec![];
-                match do_list
-                    .stdout
-                    .expect("出错了! Failed to open stdout")
-                    .read_to_end(&mut buf)
-                {
-                    Err(e) => {
-                        eprintln!("出错了! Error, couldn't read stdout: {}", e);
-                        ret = RET_ITEM_ERROR;
-                    }
-                    Ok(_) => {
-                        let _ = f_list.write_all(&buf);
-                    }
+
+                if let Err(e) = generate_directory_listing(f_name, f_list_name, level_tree) {
+                    eprintln!("出错了! Error generating directory listing: {}", e);
+                    ret = RET_ITEM_ERROR;
                 }
             }
 
@@ -227,24 +178,10 @@ pub fn entry_archive(
                 Some(target) => &format!("{}{}{}", target, f_name, S_ARCHIVE),
                 None => &format!("{}{}", f_name, S_ARCHIVE),
             };
-            let do_compress = Command::new("tar")
-                .arg("--zstd")
-                .arg("-cf")
-                .arg(f_out)
-                .arg(f_name)
-                .spawn()
-                .expect(&format!("出错了! Failed to compress {}", f_name));
-            match do_compress.wait_with_output() {
-                Ok(out) => {
-                    if out.status.code() != Some(0) {
-                        eprintln!("出错了! tar returned: {:?}", out.status.code());
-                        return Err(RET_TAR_ERROR);
-                    }
-                }
-                Err(e) => {
-                    eprintln!("出错了! Error with tar compression: {}", e);
-                    return Err(RET_TAR_ERROR);
-                }
+            let target_dir_str = target_dir.as_deref().unwrap_or("");
+            if let Err(_) = do_archive(f_name, target_dir_str, true) {
+                eprintln!("出错了! Failed to compress {}", f_name);
+                return Err(RET_TAR_ERROR);
             }
             print!(" -> {}\n", f_out);
 
@@ -281,6 +218,115 @@ pub fn entry_archive(
     match ret {
         0 => Ok(()),
         ret => Err(ret),
+    }
+}
+
+/// Implement compression with archive library tar and zstd
+fn do_archive(f_name: &str, target: &str, compress: bool) -> Result<(), u8> {
+    let path = Path::new(f_name);
+    let target_path = Path::new(target);
+
+    if compress {
+        // Create output file with .tar.zst extension
+        let file_name = path
+            .file_name()
+            .ok_or(RET_TAR_ERROR)?
+            .to_str()
+            .ok_or(RET_TAR_ERROR)?;
+        let output_path = target_path.join(format!("{}{}", file_name, S_ARCHIVE));
+        let output_file = File::create(&output_path).map_err(|_| RET_TAR_ERROR)?;
+
+        // Create zstd encoder with same settings as tar --zstd
+        let mut zstd_encoder =
+            zstd::stream::Encoder::new(output_file, 3).map_err(|_| RET_TAR_ERROR)?;
+        zstd_encoder
+            .multithread(num_cpus::get() as u32)
+            .map_err(|_| RET_TAR_ERROR)?;
+
+        // Create tar builder with same format as tar command
+        let mut tar_builder = tar::Builder::new(zstd_encoder);
+        tar_builder.mode(tar::HeaderMode::Deterministic);
+
+        if path.is_dir() {
+            // Add directory contents to archive (preserving permissions)
+            let dir_name = path.file_name().ok_or(RET_TAR_ERROR)?;
+            tar_builder
+                .append_dir_all(dir_name, path)
+                .map_err(|_| RET_TAR_ERROR)?;
+        } else {
+            // Add single file to archive (preserving permissions)
+            let mut file = File::open(path).map_err(|_| RET_TAR_ERROR)?;
+            let file_name = path.file_name().ok_or(RET_TAR_ERROR)?;
+            let mut header = tar::Header::new_gnu();
+            header.set_metadata(&path.metadata().map_err(|_| RET_TAR_ERROR)?);
+            header.set_path(file_name).map_err(|_| RET_TAR_ERROR)?;
+            header.set_size(file.metadata().map_err(|_| RET_TAR_ERROR)?.len());
+            tar_builder
+                .append(&header, &mut file)
+                .map_err(|_| RET_TAR_ERROR)?;
+        }
+
+        // Finish both tar and zstd
+        tar_builder
+            .into_inner()
+            .map_err(|_| RET_TAR_ERROR)?
+            .finish()
+            .map_err(|_| RET_TAR_ERROR)?;
+    } else {
+        // Decompress - open input file
+        let input_file = File::open(path).map_err(|_| RET_TAR_ERROR)?;
+
+        // Create zstd decoder with same settings as tar --zstd
+        let zstd_decoder = zstd::stream::Decoder::new(input_file).map_err(|_| RET_TAR_ERROR)?;
+
+        // Create tar archive and extract contents
+        let mut archive = tar::Archive::new(zstd_decoder);
+        archive.set_preserve_permissions(true);
+        archive.set_preserve_mtime(true);
+        archive.unpack(target_path).map_err(|_| RET_TAR_ERROR)?;
+    }
+
+    Ok(())
+}
+
+/// Generate a directory listing using eza command
+fn generate_directory_listing(
+    dir_path: &str,
+    output_path: &str,
+    level_tree: u8,
+) -> Result<(), std::io::Error> {
+    let mut f_list = File::create(output_path)?;
+
+    let do_list = Command::new("eza")
+        .arg("-lT")
+        .arg(format!("-L{}", level_tree))
+        .arg(output_path)
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to call eza: {}", e),
+            )
+        })?;
+
+    let mut buf = vec![];
+    match do_list
+        .stdout
+        .ok_or(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Failed to open stdout",
+        ))?
+        .read_to_end(&mut buf)
+    {
+        Err(e) => Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Couldn't read stdout: {}", e),
+        )),
+        Ok(_) => {
+            f_list.write_all(&buf)?;
+            Ok(())
+        }
     }
 }
 

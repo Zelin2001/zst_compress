@@ -1,7 +1,7 @@
 [package]
 name = "zst_compress"
-version = "0.1.11"
-edition = "2021"
+version = "0.2.0"
+edition = "2024"
 description = "Helper tool for `tar --zstd`"
 documentation = "https://docs.rs/zst-compress"
 readme = "README.md"
@@ -9,4 +9,9 @@ license = "GPL-2.0-or-later"
 categories = ["command-line-utilities"]
 
 [dependencies]
+anyhow = "1.0.98"
 clap = { version = "4.5.23", features = ["derive"] }
+eza = "0.21.1"
+num_cpus = "1.16.0"
+tar = "0.4.44"
+zstd = { version = "0.13.3", features = ["zstdmt"] }
