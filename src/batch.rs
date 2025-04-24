@@ -131,7 +131,7 @@ pub fn entry_archive(
                 Some(target) => &(target + &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()]),
                 None => &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()],
             };
-            let target_dir_str = target_dir.as_deref().unwrap_or("");
+            let target_dir_str = target_dir.as_deref().unwrap_or(".");
             if let Err(_) = do_archive(Path::new(f_name), Path::new(target_dir_str), false) {
                 eprintln!("出错了! Failed to extract {}", f_name);
                 return Err(RET_TAR_ERROR);
@@ -254,20 +254,24 @@ fn do_archive(f_path: &Path, target: &Path, compress: bool) -> Result<(), u8> {
         // Finish zstd
         encoder.finish().map_err(|_| RET_TAR_ERROR)?;
     } else {
-        // Decompression path: zstd -> tar
+        // Decompression path: zstd -> tar file -> unpack
         let file_stem = f_path.file_stem().unwrap().to_str().unwrap();
-        let output_dir = target.join(file_stem);
-        std::fs::create_dir_all(&output_dir).map_err(|_| RET_TAR_ERROR)?;
+        let tar_path = target.join(format!("{}.tar", file_stem));
 
-        // Open compressed file
-        let input_file = File::open(f_path).map_err(|_| RET_TAR_ERROR)?;
+        // First decompress to .tar file
+        {
+            let input_file = File::open(f_path).map_err(|_| RET_TAR_ERROR)?;
+            let output_file = File::create(&tar_path).map_err(|_| RET_TAR_ERROR)?;
+            zstd::stream::copy_decode(input_file, output_file).map_err(|_| RET_TAR_ERROR)?;
+        }
 
-        // Create zstd decoder
-        let decoder = zstd::stream::Decoder::new(input_file).map_err(|_| RET_TAR_ERROR)?;
+        // Then unpack the tar file
+        let tar_file = File::open(&tar_path).map_err(|_| RET_TAR_ERROR)?;
+        let mut archive = tar::Archive::new(tar_file);
+        archive.unpack(target).map_err(|_| RET_TAR_ERROR)?;
 
-        // Create tar archive from decoder
-        let mut archive = tar::Archive::new(decoder);
-        archive.unpack(&output_dir).map_err(|_| RET_TAR_ERROR)?;
+        // Clean up the intermediate tar file
+        std::fs::remove_file(&tar_path).map_err(|_| RET_TAR_ERROR)?;
     }
 
     Ok(())
