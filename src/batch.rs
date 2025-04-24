@@ -132,7 +132,7 @@ pub fn entry_archive(
                 None => &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()],
             };
             let target_dir_str = target_dir.as_deref().unwrap_or("");
-            if let Err(_) = do_archive(f_name, target_dir_str, false) {
+            if let Err(_) = do_archive(Path::new(f_name), Path::new(target_dir_str), false) {
                 eprintln!("出错了! Failed to extract {}", f_name);
                 return Err(RET_TAR_ERROR);
             }
@@ -178,7 +178,7 @@ pub fn entry_archive(
                 None => &format!("{}{}", f_name, S_ARCHIVE),
             };
             let target_dir_str = target_dir.as_deref().unwrap_or("");
-            if let Err(_) = do_archive(f_name, target_dir_str, true) {
+            if let Err(_) = do_archive(Path::new(f_name), Path::new(target_dir_str), true) {
                 eprintln!("出错了! Failed to compress {}", f_name);
                 return Err(RET_TAR_ERROR);
             }
@@ -221,70 +221,53 @@ pub fn entry_archive(
 }
 
 /// Implement compression with archive library tar and zstd
-fn do_archive(f_name: &str, target: &str, compress: bool) -> Result<(), u8> {
-    let path = Path::new(f_name);
-    let target_path = Path::new(target);
-
+fn do_archive(f_path: &Path, target: &Path, compress: bool) -> Result<(), u8> {
     if compress {
-        // Create output file with .tar.zst extension
-        let file_name = path
-            .file_name()
-            .ok_or(RET_TAR_ERROR)?
-            .to_str()
-            .ok_or(RET_TAR_ERROR)?;
-        let output_path = target_path.join(format!("{}{}", file_name, S_ARCHIVE));
+        // Compression path: tar -> zstd
+        let output_path = target.join(format!(
+            "{}.tar.zst",
+            f_path.file_name().unwrap().to_str().unwrap()
+        ));
         let output_file = File::create(&output_path).map_err(|_| RET_TAR_ERROR)?;
 
-        // Create zstd encoder with same settings as tar --zstd
-        let mut zstd_encoder =
-            zstd::stream::Encoder::new(output_file, 3).map_err(|_| RET_TAR_ERROR)?;
-        zstd_encoder
-            .multithread(num_cpus::get() as u32)
-            .map_err(|_| RET_TAR_ERROR)?;
+        // Create zstd encoder and use it directly
+        let mut encoder = zstd::stream::Encoder::new(output_file, 3).map_err(|_| RET_TAR_ERROR)?;
 
-        // Create tar builder with same format as tar command
-        let mut tar_builder = tar::Builder::new(zstd_encoder);
-        tar_builder.mode(tar::HeaderMode::Deterministic);
+        {
+            // Create tar builder that writes to the zstd encoder
+            let mut builder = tar::Builder::new(&mut encoder);
 
-        if path.is_dir() {
-            // Add directory contents to archive (preserving permissions)
-            let dir_name = path.file_name().ok_or(RET_TAR_ERROR)?;
-            tar_builder
-                .append_dir_all(dir_name, path)
-                .map_err(|_| RET_TAR_ERROR)?;
-        } else {
-            // Add single file to archive (preserving permissions)
-            let mut file = File::open(path).map_err(|_| RET_TAR_ERROR)?;
-            let file_name = path.file_name().ok_or(RET_TAR_ERROR)?;
-            let mut header = tar::Header::new_gnu();
-            header.set_metadata(&path.metadata().map_err(|_| RET_TAR_ERROR)?);
-            header.set_path(file_name).map_err(|_| RET_TAR_ERROR)?;
-            header.set_size(file.metadata().map_err(|_| RET_TAR_ERROR)?.len());
-            tar_builder
-                .append(&header, &mut file)
-                .map_err(|_| RET_TAR_ERROR)?;
+            if f_path.is_dir() {
+                builder
+                    .append_dir_all(f_path.file_name().unwrap(), f_path)
+                    .map_err(|_| RET_TAR_ERROR)?;
+            } else {
+                builder
+                    .append_path_with_name(f_path, f_path.file_name().unwrap())
+                    .map_err(|_| RET_TAR_ERROR)?;
+            }
+
+            // Finish tar
+            builder.finish().map_err(|_| RET_TAR_ERROR)?;
         }
 
-        // Finish both tar and zstd
-        tar_builder
-            .into_inner()
-            .map_err(|_| RET_TAR_ERROR)?
-            .finish()
-            .map_err(|_| RET_TAR_ERROR)?;
+        // Finish zstd
+        encoder.finish().map_err(|_| RET_TAR_ERROR)?;
     } else {
-        // TODO: Fix the decompression error
+        // Decompression path: zstd -> tar
+        let file_stem = f_path.file_stem().unwrap().to_str().unwrap();
+        let output_dir = target.join(file_stem);
+        std::fs::create_dir_all(&output_dir).map_err(|_| RET_TAR_ERROR)?;
 
-        // Decompress - open input file
-        let input_file = File::open(path).map_err(|_| RET_TAR_ERROR)?;
+        // Open compressed file
+        let input_file = File::open(f_path).map_err(|_| RET_TAR_ERROR)?;
 
-        // Create zstd decoder with same settings as tar --zstd
-        let zstd_decoder = zstd::stream::Decoder::new(input_file).map_err(|_| RET_TAR_ERROR)?;
+        // Create zstd decoder
+        let decoder = zstd::stream::Decoder::new(input_file).map_err(|_| RET_TAR_ERROR)?;
 
-        // Create tar archive and extract contents
-        let mut archive = tar::Archive::new(zstd_decoder);
-        archive.set_preserve_permissions(true);
-        archive.set_preserve_mtime(true);
-        archive.unpack(target_path).map_err(|_| RET_TAR_ERROR)?;
+        // Create tar archive from decoder
+        let mut archive = tar::Archive::new(decoder);
+        archive.unpack(&output_dir).map_err(|_| RET_TAR_ERROR)?;
     }
 
     Ok(())
