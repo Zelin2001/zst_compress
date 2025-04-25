@@ -1,5 +1,6 @@
 use crate::batch::batch_archive;
 use clap::Parser;
+use std::env::current_dir;
 use std::process::ExitCode;
 
 /// Args for CLI use
@@ -17,7 +18,7 @@ pub struct Args {
     /// Select a single input file
     #[arg(short, long)]
     pub input: Option<String>,
-    
+
     /// Implement extraction for zst_compress binary
     #[arg(short)]
     pub x: bool,
@@ -41,7 +42,11 @@ pub fn cli(mut compress: bool) -> ExitCode {
         compress = false;
     }
 
-    match batch_archive(args, compress) {
+    match batch_archive(
+        current_dir().expect("Fatal: No current working directory, quit."),
+        args,
+        compress,
+    ) {
         Ok(()) => ExitCode::SUCCESS,
         Err(ret) => ExitCode::from(ret),
     }

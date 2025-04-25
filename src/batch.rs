@@ -1,8 +1,7 @@
 use crate::runner::Args;
-use std::env::current_dir;
 use std::fs::{File, read_dir, remove_dir_all, remove_file};
 use std::io::{prelude::*, stdout};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // Set the skipped / selected patterns
 static S_ARCHIVE: &str = ".tar.zst";
@@ -15,7 +14,7 @@ static RET_ITEM_ERROR: u8 = 2;
 static RET_DIR_ERROR: u8 = 3;
 
 /// Compress or decompress all items in a folder
-pub fn batch_archive(args: Args, compress: bool) -> Result<(), u8> {
+pub fn batch_archive(start_dir: PathBuf, args: Args, compress: bool) -> Result<(), u8> {
     let mut ret = 0;
     let level_tree = match args.level {
         Some(level) => level as u8,
@@ -25,7 +24,7 @@ pub fn batch_archive(args: Args, compress: bool) -> Result<(), u8> {
     match args.input {
         None => {
             // Walk through videos
-            match read_dir(current_dir().unwrap()) {
+            match read_dir(start_dir) {
                 Ok(entries) => {
                     for entry in entries {
                         match entry {
