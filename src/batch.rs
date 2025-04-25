@@ -8,7 +8,6 @@ static S_ARCHIVE: &str = ".tar.zst";
 static S_ARCHILIST: &str = "_archived-filelist.txt";
 static S_FLAG_MESSAGE: &str = "_archived-message.txt";
 static S_TOOL: &str = "zst_";
-static S_BIN: &str = ".bin";
 static RET_TAR_ERROR: u8 = 1;
 static RET_ITEM_ERROR: u8 = 2;
 static RET_DIR_ERROR: u8 = 3;
@@ -111,12 +110,12 @@ pub fn entry_archive(
 
     // Skip filelists and tools
     if f_name.find(S_TOOL) == Some(0)
-        || f_name.find(S_BIN) == Some(0)
         || (f_name.len() >= S_ARCHILIST.len()
             && f_name.rfind(S_ARCHILIST) == Some(f_name.len() - S_ARCHILIST.len()))
         || (f_name.len() >= S_FLAG_MESSAGE.len()
             && f_name.rfind(S_FLAG_MESSAGE) == Some(f_name.len() - S_FLAG_MESSAGE.len()))
-    { // Do nothing
+    {
+        println!("Skip: {}", f_name);
     }
     // Selected archive files
     else if f_name.len() >= S_ARCHIVE.len()
