@@ -1,157 +1,261 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
-use std::fs;
+use std::env::set_current_dir;
+use std::fs::{create_dir_all, metadata, remove_dir_all, write};
 use std::path::PathBuf;
 
 #[test]
-fn test_compress_extract() {
-    let original_dir = std::env::current_dir().unwrap();
-    let test_dir = PathBuf::from("test");
-    fs::create_dir_all(&test_dir).unwrap();
-    std::env::set_current_dir(&test_dir).unwrap();
+fn test_default() {
+    // Run tests
+    run_test_default().unwrap();
+    run_test_default_preserve().unwrap();
+    run_test_single().unwrap();
+}
 
-    // Run default test
-    let result1 = std::panic::catch_unwind(|| {
-        run_test_default().unwrap();
-    });
+/// Sets up test environment by creating directory and changing working directory
+///
+/// # Examples
+///
+/// ```
+/// use std::path::PathBuf;
+/// let test_dir = PathBuf::from("tests/doc_test_setup");
+/// let original_dir = run_setup(&test_dir).unwrap();
+/// assert!(test_dir.exists());
+/// assert_eq!(std::env::current_dir().unwrap(), test_dir);
+/// run_cleanup(&original_dir, &test_dir).unwrap();
+/// ```
+fn run_setup(test_dir: &PathBuf) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    // Save the directory
+    let original_dir = std::env::current_dir()?;
+    create_dir_all(test_dir)?;
+    set_current_dir(test_dir)?;
 
-    // Run directory test
-    let result2 = std::panic::catch_unwind(|| {
-        run_test_dir().unwrap();
-    });
+    return Ok(original_dir);
+}
 
+/// Cleans up test environment by restoring original directory and removing test files
+///
+/// # Examples
+///
+/// ```
+/// use std::path::PathBuf;
+/// let test_dir = PathBuf::from("tests/doc_test_cleanup");
+/// let original_dir = run_setup(&test_dir).unwrap();
+/// run_cleanup(&original_dir, &test_dir).unwrap();
+/// assert_eq!(std::env::current_dir().unwrap(), original_dir);
+/// assert!(!test_dir.exists());
+/// ```
+fn run_cleanup(
+    original_dir: &PathBuf,
+    test_dir: &PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Clean up test directory regardless of test outcome
-    std::env::set_current_dir(&original_dir).unwrap();
-    let _ = fs::remove_dir_all("test");
+    std::env::set_current_dir(original_dir)?;
+    let _ = remove_dir_all(test_dir);
 
-    // Propagate any test failure
-    if let Err(e) = result1 {
-        std::panic::resume_unwind(e);
+    return Ok(());
+}
+
+fn run_test_files_create() -> Result<(Vec<PathBuf>, Vec<u64>), Box<dyn std::error::Error>> {
+    // Create mixed test files
+    create_dir_all(PathBuf::from("dir"))?;
+    let dir_bin_input = PathBuf::from("dir/data1.bin");
+    let dir_text_input = PathBuf::from("dir/text.txt");
+    let file_input = PathBuf::from("large_test.bin");
+    let dir_output = PathBuf::from("dir.tar.zst");
+    let dir_filelist_output = PathBuf::from("dir_archived-filelist.txt");
+    let file_output = PathBuf::from("large_test.bin.tar.zst");
+
+    // Generate 1MB binary data
+    let pattern = b"BINARYDATAPATTERN1234567890";
+    let mut dir_bin_data = Vec::with_capacity(1_000_000);
+    while dir_bin_data.len() < 1_000_000 {
+        dir_bin_data.extend_from_slice(pattern);
     }
-    if let Err(e) = result2 {
-        std::panic::resume_unwind(e);
+    dir_bin_data.truncate(1_000_000);
+    write(&dir_bin_input, &dir_bin_data)?;
+
+    // Create text file
+    write(
+        &dir_text_input,
+        "This is a test text file\nwith multiple lines\n",
+    )?;
+
+    // Generate 2MB of compressible data (repeating pattern)
+    let pattern = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    let mut data = Vec::with_capacity(1_000_000);
+    while data.len() < 2_000_000 {
+        data.extend_from_slice(pattern);
     }
+    data.truncate(2_000_000);
+    write(&file_input, &data)?;
+
+    return Ok((
+        vec![
+            dir_bin_input.clone(),
+            dir_text_input.clone(),
+            file_input.clone(),
+            dir_output,
+            dir_filelist_output,
+            file_output,
+        ],
+        vec![
+            metadata(&dir_bin_input)?.len(),
+            metadata(&dir_text_input)?.len(),
+            metadata(&file_input)?.len(),
+        ],
+    ));
+}
+
+fn run_test_files_check(
+    filenames: &Vec<PathBuf>,
+    filesizes: &Vec<u64>,
+    status: &Vec<bool>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for file_index in 0..filenames.len() {
+        match status[file_index] {
+            true => {
+                // Verify the file exists with better error message
+                let path = &filenames[file_index];
+                assert!(
+                    path.exists(),
+                    "File {} should exist but doesn't",
+                    path.display()
+                );
+
+                // Verify compressed file is smaller with better error message
+                if file_index == 3 || file_index == 5 {
+                    let input_size = filesizes[file_index - 3];
+                    let output_size = metadata(path)?.len();
+                    assert!(
+                        output_size < input_size,
+                        "Compressed file {} ({} bytes) should be smaller than input ({} bytes)",
+                        path.display(),
+                        output_size,
+                        input_size
+                    );
+                }
+            }
+            false => {
+                // Verify the file is removed
+                assert!(!filenames[file_index].exists());
+            }
+        }
+    }
+
+    return Ok(());
+}
+
+fn run_test_command(
+    args: &[&str],
+    expected_status: &[bool],
+    expected_output: &str,
+    filenames: &Vec<PathBuf>,
+    filesizes: &Vec<u64>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
+    for arg in args {
+        cmd.arg(arg);
+    }
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains(expected_output));
+    run_test_files_check(filenames, filesizes, &expected_status.to_vec())?;
+    Ok(())
 }
 
 fn run_test_default() -> Result<(), Box<dyn std::error::Error>> {
-    // Change to test directory
-    let input = PathBuf::from("large_test.bin");
-    let output = PathBuf::from("large_test.bin.tar.zst");
+    // Initialize test
+    let test_dir = PathBuf::from("tests/data_default");
+    let original_dir = run_setup(&test_dir).unwrap();
 
-    // Generate 1MB of compressible data (repeating pattern)
-    let pattern = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let mut data = Vec::with_capacity(1_000_000);
-    while data.len() < 1_000_000 {
-        data.extend_from_slice(pattern);
-    }
-    data.truncate(1_000_000);
-    std::fs::write(&input, &data)?;
+    // Create files
+    let (filenames, filesizes) = run_test_files_create()?;
 
-    // test preserved flag
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
-    cmd.arg("-i")
-        .arg(input.to_str().unwrap())
-        .arg("-p")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Compress:"));
-    assert!(input.exists());
-    assert!(output.exists());
+    // Test compression
+    run_test_command(
+        &[],
+        &[false, false, false, true, true, true],
+        "Compress:",
+        &filenames,
+        &filesizes,
+    )?;
 
-    // Verify compressed file is smaller
-    let input_size = std::fs::metadata(&input)?.len();
-    let output_size = std::fs::metadata(&output)?.len();
-    assert!(
-        output_size < input_size,
-        "Compressed file should be smaller"
-    );
+    // Test extraction
+    run_test_command(
+        &["-x"],
+        &[true, true, true, false, false, false],
+        "Extract:",
+        &filenames,
+        &filesizes,
+    )?;
 
-    // Clean up for next test
-    std::fs::remove_file(&output)?;
-
-    // test normal flag
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
-    cmd.arg("-i")
-        .arg(input.to_str().unwrap())
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Compress:"));
-    assert!(!input.exists());
-    assert!(output.exists());
-
-    // Then extract
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
-    cmd.arg("-x")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Extract:"));
-    assert!(input.exists());
-    assert!(!output.exists());
+    // Clean up test
+    run_cleanup(&original_dir, &test_dir).unwrap();
 
     Ok(())
 }
 
-fn run_test_dir() -> Result<(), Box<dyn std::error::Error>> {
-    // Create mixed test files
-    fs::create_dir_all(PathBuf::from("dir"))?;
-    let bin_file = PathBuf::from("dir/data.bin");
-    let text_file = PathBuf::from("dir/text.txt");
-    let output = PathBuf::from("dir.tar.zst");
+fn run_test_default_preserve() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize test
+    let test_dir = PathBuf::from("tests/data_preserve");
+    let original_dir = run_setup(&test_dir).unwrap();
 
-    // Generate 1MB binary data
-    let pattern = b"BINARYDATAPATTERN1234567890";
-    let mut bin_data = Vec::with_capacity(1_000_000);
-    while bin_data.len() < 1_000_000 {
-        bin_data.extend_from_slice(pattern);
-    }
-    bin_data.truncate(1_000_000);
-    std::fs::write(&bin_file, &bin_data)?;
+    // Create files
+    let (filenames, filesizes) = run_test_files_create()?;
 
-    // Create text file
-    std::fs::write(
-        &text_file,
-        "This is a test text file\nwith multiple lines\n",
+    // Test compression with preserve
+    run_test_command(
+        &["-p"],
+        &[true, true, true, true, true, true],
+        "Compress:",
+        &filenames,
+        &filesizes,
     )?;
 
-    // Run compression testing preserved flag
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
-    cmd.arg("-p")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Compress:"));
-    assert!(bin_file.exists());
-    assert!(text_file.exists());
-    assert!(output.exists());
+    // Test extraction with preserve
+    run_test_command(
+        &["-p", "-x"],
+        &[true, true, true, true, true, true],
+        "Extract:",
+        &filenames,
+        &filesizes,
+    )?;
 
-    // Verify compressed file is smaller
-    let input_size = std::fs::metadata(&bin_file)?.len();
-    let output_size = std::fs::metadata(&output)?.len();
-    assert!(
-        output_size < input_size,
-        "Compressed file should be smaller"
-    );
+    // Clean up test
+    run_cleanup(&original_dir, &test_dir).unwrap();
 
-    // Clean up for next test
-    std::fs::remove_file(&output)?;
+    Ok(())
+}
 
-    // test normal flag
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Compress:"));
-    assert!(!bin_file.exists());
-    assert!(!text_file.exists());
-    assert!(output.exists());
+fn run_test_single() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize test
+    let test_dir = PathBuf::from("tests/data_single");
+    let original_dir = run_setup(&test_dir).unwrap();
 
-    // Then extract
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
-    cmd.arg("-x")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Extract:"));
-    assert!(bin_file.exists());
-    assert!(text_file.exists());
-    assert!(!output.exists());
+    // Create files
+    let (filenames, filesizes) = run_test_files_create()?;
+    
+    // Test single file compression
+    run_test_command(
+        &["-i", &filenames[2].to_string_lossy()],
+        &[true, true, false, false, false, true],
+        "Compress:",
+        &filenames,
+        &filesizes,
+    )?;
+
+    // Test extraction with preserve
+    run_test_command(
+        &["-p", "-x"],
+        &[true, true, true, false, false, true],
+        "Extract:",
+        &filenames,
+        &filesizes,
+    )?;
+
+    // Clean up test
+    run_cleanup(&original_dir, &test_dir).unwrap();
 
     Ok(())
 }
