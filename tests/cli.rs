@@ -5,11 +5,82 @@ use std::fs::{create_dir_all, metadata, remove_dir_all, write};
 use std::path::PathBuf;
 
 #[test]
-fn test_default() {
+fn test_cli() {
     // Run tests
-    run_test_default().unwrap();
-    run_test_default_preserve().unwrap();
-    run_test_single().unwrap();
+    run_test(
+        "tests/data_default",
+        &[],
+        "Compress:",
+        &vec![false, false, false, true, true, true],
+        &["-x"],
+        "Extract:",
+        &vec![true, true, true, false, false, false],
+    )
+    .unwrap();
+    run_test(
+        "tests/data_preserve",
+        &["-p"],
+        "Compress:",
+        &vec![true, true, true, true, true, true],
+        &["-p", "-x"],
+        "Extract:",
+        &vec![true, true, true, true, true, true],
+    )
+    .unwrap();
+    run_test(
+        "tests/data_single",
+        &["-i", "large_test.bin"],
+        "Compress:",
+        &vec![true, true, false, false, false, true],
+        &["-p", "-x"],
+        "Extract:",
+        &vec![true, true, true, false, false, true],
+    )
+    .unwrap();
+}
+
+/// Runs a complete test cycle with compression and extraction
+///
+/// # Arguments
+/// * `test_data_dir` - Directory path for test files
+/// * `compress_args` - CLI args for compression (e.g. ["-p"])
+/// * `compress_expect` - Expected stdout text during compression
+/// * `compress_files_status` - Expected file states after compression:
+///   [dir/data1.bin, dir/text.txt, large_test.bin, dir.tar.zst,
+///    dir_archived-filelist.txt, large_test.bin.tar.zst]
+/// * `decompress_args` - CLI args for extraction (e.g. ["-x"])
+/// * `decompress_expect` - Expected stdout text during extraction
+/// * `decompress_files_status` - Expected file states after extraction:
+///   [dir/data1.bin, dir/text.txt, large_test.bin, dir.tar.zst,
+///    dir_archived-filelist.txt, large_test.bin.tar.zst]
+fn run_test(
+    test_data_dir: &str,
+    compress_args: &[&str],
+    compress_expect: &str,
+    compress_files_status: &Vec<bool>,
+    decompress_args: &[&str],
+    decompress_expect: &str,
+    decompress_files_status: &Vec<bool>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize test
+    let test_dir = PathBuf::from(test_data_dir);
+    let original_dir = run_setup(&test_dir)?;
+
+    // Create files
+    let (filenames, filesizes) = run_test_files_create()?;
+
+    // Test compression
+    run_test_command(compress_args, compress_expect)?;
+    run_test_files_check(&filenames, &filesizes, compress_files_status)?;
+
+    // Test extraction
+    run_test_command(decompress_args, decompress_expect)?;
+    run_test_files_check(&filenames, &filesizes, decompress_files_status)?;
+
+    // Clean up test
+    run_cleanup(&original_dir, &test_dir)?;
+
+    Ok(())
 }
 
 /// Sets up test environment by creating directory and changing working directory
@@ -56,6 +127,16 @@ fn run_cleanup(
     return Ok(());
 }
 
+/// Creates test files with specific patterns for compression testing
+///
+/// Creates:
+/// - 1MB binary file (dir/data1.bin)
+/// - Text file (dir/text.txt)
+/// - 2MB compressible data file (large_test.bin)
+///
+/// Returns tuple of:
+/// - Vector of all test file paths
+/// - Vector of original file sizes for first 3 files
 fn run_test_files_create() -> Result<(Vec<PathBuf>, Vec<u64>), Box<dyn std::error::Error>> {
     // Create mixed test files
     create_dir_all(PathBuf::from("dir"))?;
@@ -107,6 +188,16 @@ fn run_test_files_create() -> Result<(Vec<PathBuf>, Vec<u64>), Box<dyn std::erro
     ));
 }
 
+/// Verifies file states match expected status after compression/extraction
+///
+/// # Arguments
+/// * `filenames` - All test file paths
+/// * `filesizes` - Original sizes of input files
+/// * `status` - Expected existence state for each file
+///
+/// Checks:
+/// - Files exist/not exist per status flags
+/// - Compressed files are smaller than originals
 fn run_test_files_check(
     filenames: &Vec<PathBuf>,
     filesizes: &Vec<u64>,
@@ -146,12 +237,18 @@ fn run_test_files_check(
     return Ok(());
 }
 
+/// Executes CLI command and verifies output
+///
+/// # Arguments
+/// * `args` - Command line arguments to pass
+/// * `expected_output` - Text that should appear in stdout
+///
+/// Uses assert_cmd to run the binary and verify:
+/// - Exit code is success
+/// - Output contains expected text
 fn run_test_command(
     args: &[&str],
-    expected_status: &[bool],
     expected_output: &str,
-    filenames: &Vec<PathBuf>,
-    filesizes: &Vec<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
     for arg in args {
@@ -160,102 +257,5 @@ fn run_test_command(
     cmd.assert()
         .success()
         .stdout(predicate::str::contains(expected_output));
-    run_test_files_check(filenames, filesizes, &expected_status.to_vec())?;
-    Ok(())
-}
-
-fn run_test_default() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize test
-    let test_dir = PathBuf::from("tests/data_default");
-    let original_dir = run_setup(&test_dir).unwrap();
-
-    // Create files
-    let (filenames, filesizes) = run_test_files_create()?;
-
-    // Test compression
-    run_test_command(
-        &[],
-        &[false, false, false, true, true, true],
-        "Compress:",
-        &filenames,
-        &filesizes,
-    )?;
-
-    // Test extraction
-    run_test_command(
-        &["-x"],
-        &[true, true, true, false, false, false],
-        "Extract:",
-        &filenames,
-        &filesizes,
-    )?;
-
-    // Clean up test
-    run_cleanup(&original_dir, &test_dir).unwrap();
-
-    Ok(())
-}
-
-fn run_test_default_preserve() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize test
-    let test_dir = PathBuf::from("tests/data_preserve");
-    let original_dir = run_setup(&test_dir).unwrap();
-
-    // Create files
-    let (filenames, filesizes) = run_test_files_create()?;
-
-    // Test compression with preserve
-    run_test_command(
-        &["-p"],
-        &[true, true, true, true, true, true],
-        "Compress:",
-        &filenames,
-        &filesizes,
-    )?;
-
-    // Test extraction with preserve
-    run_test_command(
-        &["-p", "-x"],
-        &[true, true, true, true, true, true],
-        "Extract:",
-        &filenames,
-        &filesizes,
-    )?;
-
-    // Clean up test
-    run_cleanup(&original_dir, &test_dir).unwrap();
-
-    Ok(())
-}
-
-fn run_test_single() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize test
-    let test_dir = PathBuf::from("tests/data_single");
-    let original_dir = run_setup(&test_dir).unwrap();
-
-    // Create files
-    let (filenames, filesizes) = run_test_files_create()?;
-    
-    // Test single file compression
-    run_test_command(
-        &["-i", &filenames[2].to_string_lossy()],
-        &[true, true, false, false, false, true],
-        "Compress:",
-        &filenames,
-        &filesizes,
-    )?;
-
-    // Test extraction with preserve
-    run_test_command(
-        &["-p", "-x"],
-        &[true, true, true, false, false, true],
-        "Extract:",
-        &filenames,
-        &filesizes,
-    )?;
-
-    // Clean up test
-    run_cleanup(&original_dir, &test_dir).unwrap();
-
     Ok(())
 }
