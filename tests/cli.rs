@@ -10,30 +10,30 @@ fn test_cli() {
     run_test(
         "tests/data_default",
         &[],
-        "Compress:",
+        "/2) Compress:",
         &vec![false, false, false, true, true, true],
         &["-x"],
-        "Extract:",
+        "/3) Extract:",
         &vec![true, true, true, false, false, false],
     )
     .unwrap();
     run_test(
         "tests/data_preserve",
         &["-p"],
-        "Compress:",
+        "2) Compress:",
         &vec![true, true, true, true, true, true],
         &["-p", "-x"],
-        "Extract:",
+        "/5) Extract:",
         &vec![true, true, true, true, true, true],
     )
     .unwrap();
     run_test(
         "tests/data_single",
         &["-i", "large_test.bin"],
-        "Compress:",
+        "(1/1) Compress:",
         &vec![true, true, false, false, false, true],
         &["-p", "-x"],
-        "Extract:",
+        "/2) Extract:",
         &vec![true, true, true, false, false, true],
     )
     .unwrap();

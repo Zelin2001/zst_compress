@@ -25,10 +25,12 @@ pub fn batch_archive(start_dir: PathBuf, args: Args, compress: bool) -> Result<(
             // Walk through videos
             match read_dir(start_dir) {
                 Ok(entries) => {
-                    for entry in entries {
-                        match entry {
-                            Ok(entry_file) => {
-                                if match entry_file.file_name().to_str() {
+                    let entries: Vec<_> = entries.collect();
+                    let total_items = entries.len();
+                    for (current_item, entry_result) in entries.into_iter().enumerate() {
+                        match entry_result {
+                            Ok(entry) => {
+                                if match entry.file_name().to_str() {
                                     Some(f_name) => entry_archive(
                                         f_name,
                                         compress,
@@ -36,12 +38,11 @@ pub fn batch_archive(start_dir: PathBuf, args: Args, compress: bool) -> Result<(
                                         args.flag,
                                         level_tree,
                                         args.target.clone(),
+                                        current_item + 1,
+                                        total_items,
                                     ),
                                     None => {
-                                        eprintln!(
-                                            "出错了! Error reading: {:?}",
-                                            entry_file.file_name()
-                                        );
+                                        eprintln!("出错了! Error reading: {:?}", entry.file_name());
                                         return Err(RET_ITEM_ERROR);
                                     }
                                 } != Ok(())
@@ -67,6 +68,8 @@ pub fn batch_archive(start_dir: PathBuf, args: Args, compress: bool) -> Result<(
                 args.flag,
                 level_tree,
                 args.target.clone(),
+                1,
+                1,
             ) != Ok(())
             {
                 ret = RET_ITEM_ERROR
@@ -88,6 +91,8 @@ pub fn entry_archive(
     flag: bool,
     level_tree: u8,
     target_dir: Option<String>,
+    current: usize,
+    total: usize,
 ) -> Result<(), u8> {
     let mut ret = 0;
 
@@ -107,6 +112,9 @@ pub fn entry_archive(
         }
         _ => target_dir,
     };
+
+    // Print progress counting
+    print!("({}/{}) ", current, total);
 
     // Skip filelists and tools
     if f_name.find(S_TOOL) == Some(0)
