@@ -226,6 +226,19 @@ fn run_test_files_check(
                         input_size
                     );
                 }
+                // Verify filelist contents if it exists
+                else if file_index == 4 && path.exists() {
+                    let contents = std::fs::read_to_string(path)?;
+                    println!("{}", contents);
+                    assert!(
+                        contents.contains("data1.bin"),
+                        "Filelist should contain 'data1.bin'"
+                    );
+                    assert!(
+                        contents.contains("text.txt"), 
+                        "Filelist should contain 'text.txt'"
+                    );
+                }
             }
             false => {
                 // Verify the file is removed
