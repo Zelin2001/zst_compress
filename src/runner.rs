@@ -1,5 +1,6 @@
 use crate::batch::batch_archive;
 use clap::Parser;
+use std::env::current_dir;
 use std::process::ExitCode;
 
 /// Args for CLI use
@@ -14,19 +15,20 @@ pub struct Args {
     #[arg(short, long)]
     pub flag: bool,
 
-    /// Select a single input file
+    /// Select a single input file instead of ./*
     #[arg(short, long)]
     pub input: Option<String>,
-    
-    /// Implement extraction for zst_compress binary
+
+    /// Extract file from batch archived
     #[arg(short)]
     pub x: bool,
 
-    /// Select recursive level for eza, default to 4
+    /// Select recursive level for listing directory,
+    /// default to 4
     #[arg(short, long)]
     pub level: Option<u8>,
 
-    /// Target location for oprated files
+    /// Target location for oprated files, default to current
     #[arg(short, long)]
     pub target: Option<String>,
     // /// Specific files to operate on
@@ -41,7 +43,11 @@ pub fn cli(mut compress: bool) -> ExitCode {
         compress = false;
     }
 
-    match batch_archive(args, compress) {
+    match batch_archive(
+        current_dir().expect("Fatal: No current working directory, quit."),
+        args,
+        compress,
+    ) {
         Ok(()) => ExitCode::SUCCESS,
         Err(ret) => ExitCode::from(ret),
     }

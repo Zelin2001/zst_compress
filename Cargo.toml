@@ -1,12 +1,20 @@
 [package]
 name = "zst_compress"
 version = "0.2.0"
-edition = "2021"
-description = "Helper tool for `tar --zstd`"
+edition = "2024"
+description = "Batch compress to or decompress dir/*.tar.zst"
 documentation = "https://docs.rs/zst-compress"
 readme = "README.md"
 license = "GPL-2.0-or-later"
 categories = ["command-line-utilities"]
 
 [dependencies]
+chrono = "0.4.35"
 clap = { version = "4.5.23", features = ["derive"] }
+num_cpus = "1.16.0"
+tar = "0.4.44"
+zstd = { version = "0.13.3", features = ["zstdmt"] }
+
+[dev-dependencies]
+assert_cmd = "2.0.12"
+predicates = "3.0.4"
