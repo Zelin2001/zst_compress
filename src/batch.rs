@@ -2,6 +2,7 @@ use crate::runner::Args;
 use std::fs::{File, read_dir, remove_dir_all, remove_file};
 use std::io::{prelude::*, stdout};
 use std::path::{Path, PathBuf};
+use crate::auxiliary::DirGuard;
 
 // Set the skipped / selected patterns
 static S_ARCHIVE: &str = ".tar.zst";
@@ -14,6 +15,7 @@ static RET_DIR_ERROR: u8 = 3;
 
 /// Compress or decompress all items in a folder
 pub fn batch_archive(start_dir: PathBuf, args: Args, compress: bool) -> Result<(), u8> {
+    let _guard = DirGuard::new(&start_dir)?;
     let mut ret = 0;
     let level_tree = match args.level {
         Some(level) => level as u8,

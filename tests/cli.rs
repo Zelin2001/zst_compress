@@ -1,8 +1,8 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
-use std::env::set_current_dir;
 use std::fs::{create_dir_all, metadata, remove_dir_all, write};
 use std::path::PathBuf;
+use zst_compress::auxiliary::DirGuard;
 
 #[test]
 fn test_cli() {
@@ -62,23 +62,25 @@ fn run_test(
     decompress_expect: &str,
     decompress_files_status: &Vec<bool>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize test
+    // Initialize test with DirGuard
     let test_dir = PathBuf::from(test_data_dir);
-    let original_dir = run_setup(&test_dir)?;
+    {
+        let _dir_guard = run_setup(&test_dir)?;
 
-    // Create files
-    let (filenames, filesizes) = run_test_files_create()?;
+        // Create files
+        let (filenames, filesizes) = run_test_files_create()?;
 
-    // Test compression
-    run_test_command(compress_args, compress_expect)?;
-    run_test_files_check(&filenames, &filesizes, compress_files_status)?;
+        // Test compression
+        run_test_command(compress_args, compress_expect)?;
+        run_test_files_check(&filenames, &filesizes, compress_files_status)?;
 
-    // Test extraction
-    run_test_command(decompress_args, decompress_expect)?;
-    run_test_files_check(&filenames, &filesizes, decompress_files_status)?;
+        // Test extraction
+        run_test_command(decompress_args, decompress_expect)?;
+        run_test_files_check(&filenames, &filesizes, decompress_files_status)?;
+    } // DirGuard dropped here, restoring original directory
 
-    // Clean up test
-    run_cleanup(&original_dir, &test_dir)?;
+    // Clean up test directory
+    run_cleanup(&test_dir)?;
 
     Ok(())
 }
@@ -95,36 +97,30 @@ fn run_test(
 /// assert_eq!(std::env::current_dir().unwrap(), test_dir);
 /// run_cleanup(&original_dir, &test_dir).unwrap();
 /// ```
-fn run_setup(test_dir: &PathBuf) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    // Save the directory
-    let original_dir = std::env::current_dir()?;
+fn run_setup(test_dir: &PathBuf) -> Result<DirGuard, Box<dyn std::error::Error>> {
     create_dir_all(test_dir)?;
-    set_current_dir(test_dir)?;
-
-    return Ok(original_dir);
+    DirGuard::new(test_dir).map_err(|e| {
+        Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to change directory: {}", e),
+        )) as Box<dyn std::error::Error>
+    })
 }
 
-/// Cleans up test environment by restoring original directory and removing test files
+/// Cleans up test environment by removing test files
 ///
 /// # Examples
 ///
 /// ```
 /// use std::path::PathBuf;
 /// let test_dir = PathBuf::from("tests/doc_test_cleanup");
-/// let original_dir = run_setup(&test_dir).unwrap();
-/// run_cleanup(&original_dir, &test_dir).unwrap();
-/// assert_eq!(std::env::current_dir().unwrap(), original_dir);
+/// run_cleanup(&test_dir).unwrap();
 /// assert!(!test_dir.exists());
 /// ```
-fn run_cleanup(
-    original_dir: &PathBuf,
-    test_dir: &PathBuf,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn run_cleanup(test_dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     // Clean up test directory regardless of test outcome
-    std::env::set_current_dir(original_dir)?;
     let _ = remove_dir_all(test_dir);
-
-    return Ok(());
+    Ok(())
 }
 
 /// Creates test files with specific patterns for compression testing
@@ -235,7 +231,7 @@ fn run_test_files_check(
                         "Filelist should contain 'data1.bin'"
                     );
                     assert!(
-                        contents.contains("text.txt"), 
+                        contents.contains("text.txt"),
                         "Filelist should contain 'text.txt'"
                     );
                 }
