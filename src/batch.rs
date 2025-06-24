@@ -1,8 +1,10 @@
-use crate::runner::Args;
-use std::fs::{File, read_dir, remove_dir_all, remove_file};
-use std::io::{prelude::*, stdout};
-use std::path::{Path, PathBuf};
 use crate::auxiliary::DirGuard;
+use crate::runner::Args;
+use std::cmp::max;
+use std::fs::{File, read_dir, remove_dir_all, remove_file};
+use std::io::{copy, prelude::*, stdout};
+use std::path::{Path, PathBuf};
+use std::thread;
 
 // Set the skipped / selected patterns
 static S_ARCHIVE: &str = ".tar.zst";
@@ -39,6 +41,7 @@ pub fn batch_archive(start_dir: PathBuf, args: Args, compress: bool) -> Result<(
                                         args.preserve,
                                         args.flag,
                                         level_tree,
+                                        args.zstdlevel,
                                         args.target.clone(),
                                         current_item + 1,
                                         total_items,
@@ -69,6 +72,7 @@ pub fn batch_archive(start_dir: PathBuf, args: Args, compress: bool) -> Result<(
                 args.preserve,
                 args.flag,
                 level_tree,
+                None,
                 args.target.clone(),
                 1,
                 1,
@@ -92,6 +96,7 @@ pub fn entry_archive(
     preserve: bool,
     flag: bool,
     level_tree: u8,
+    level_zstd: Option<i32>,
     target_dir: Option<String>,
     current: usize,
     total: usize,
@@ -140,7 +145,7 @@ pub fn entry_archive(
                 None => &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()],
             };
             let target_dir_str = target_dir.as_deref().unwrap_or(".");
-            if let Err(_) = do_archive(Path::new(f_name), Path::new(target_dir_str), false) {
+            if let Err(_) = do_archive(Path::new(f_name), Path::new(target_dir_str), false, None) {
                 eprintln!("出错了! Failed to extract {}", f_name);
                 return Err(RET_TAR_ERROR);
             }
@@ -186,7 +191,7 @@ pub fn entry_archive(
                 None => &format!("{}{}", f_name, S_ARCHIVE),
             };
             let target_dir_str = target_dir.as_deref().unwrap_or("");
-            if let Err(_) = do_archive(Path::new(f_name), Path::new(target_dir_str), true) {
+            if let Err(_) = do_archive(Path::new(f_name), Path::new(target_dir_str), true, level_zstd) {
                 eprintln!("出错了! Failed to compress {}", f_name);
                 return Err(RET_TAR_ERROR);
             }
@@ -229,7 +234,7 @@ pub fn entry_archive(
 }
 
 /// Implement compression with archive library tar and zstd
-fn do_archive(f_path: &Path, target: &Path, compress: bool) -> Result<(), u8> {
+fn do_archive(f_path: &Path, target: &Path, compress: bool, level_zstd: Option<i32>) -> Result<(), u8> {
     if compress {
         // Compression path: tar -> zstd
         let output_path = target.join(format!(
@@ -238,13 +243,27 @@ fn do_archive(f_path: &Path, target: &Path, compress: bool) -> Result<(), u8> {
         ));
         let output_file = File::create(&output_path).map_err(|_| RET_TAR_ERROR)?;
 
-        // Create zstd encoder and use it directly
-        let mut encoder = zstd::stream::Encoder::new(output_file, 3).map_err(|_| RET_TAR_ERROR)?;
+        let (mut reader, writer) = pipe::pipe();
 
+        // 启动压缩线程
+        let compressor = thread::spawn(move || {
+            let mut encoder = zstd::stream::Encoder::new(
+                output_file,
+                match level_zstd {
+                    None => 0,
+                    Some(level) => level,
+                },
+            )
+            .unwrap();
+            let cpus = thread::available_parallelism().unwrap().get();
+            encoder.multithread(max(cpus as u32 / 2, 10)).unwrap();
+            copy(&mut reader, &mut encoder).unwrap();
+            encoder.finish().unwrap();
+        });
+
+        // 主线程生成 tar
         {
-            // Create tar builder that writes to the zstd encoder
-            let mut builder = tar::Builder::new(&mut encoder);
-
+            let mut builder = tar::Builder::new(writer);
             if f_path.is_dir() {
                 builder
                     .append_dir_all(f_path.file_name().unwrap(), f_path)
@@ -254,13 +273,10 @@ fn do_archive(f_path: &Path, target: &Path, compress: bool) -> Result<(), u8> {
                     .append_path_with_name(f_path, f_path.file_name().unwrap())
                     .map_err(|_| RET_TAR_ERROR)?;
             }
-
-            // Finish tar
             builder.finish().map_err(|_| RET_TAR_ERROR)?;
         }
 
-        // Finish zstd
-        encoder.finish().map_err(|_| RET_TAR_ERROR)?;
+        compressor.join().map_err(|_| RET_TAR_ERROR)?;
     } else {
         // Decompression path: zstd -> tar file -> unpack
         let file_stem = f_path.file_stem().unwrap().to_str().unwrap();

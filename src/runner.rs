@@ -23,17 +23,22 @@ pub struct Args {
     #[arg(short)]
     pub x: bool,
 
-    /// Select recursive level for listing directory,
+    /// Select recursive level for listing directory;
     /// default to 4
     #[arg(short, long)]
     pub level: Option<u8>,
 
-    /// Target location for oprated files, default to current
+    /// Target location for oprated files; default to current
     #[arg(short, long)]
     pub target: Option<String>,
     // /// Specific files to operate on
     // #[arg(short, long)]
     // pub files: Option<Vec<String>>,
+
+    /// Zstandard level, 1(fastest) to 22(smallest);
+    /// default to 3
+    #[arg(short, long)]
+    pub zstdlevel: Option<i32>,
 }
 
 /// Do the cli parsing
