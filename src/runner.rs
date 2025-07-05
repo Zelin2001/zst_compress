@@ -26,7 +26,7 @@ pub struct Args {
     /// Select recursive level for listing directory;
     /// default to 4
     #[arg(short, long)]
-    pub level: Option<u8>,
+    pub leveldir: Option<u8>,
 
     /// Target location for oprated files; default to current
     #[arg(short, long)]

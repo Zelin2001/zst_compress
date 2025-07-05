@@ -19,7 +19,7 @@ static RET_DIR_ERROR: u8 = 3;
 pub fn batch_archive(start_dir: PathBuf, args: Args, compress: bool) -> Result<(), u8> {
     let _guard = DirGuard::new(&start_dir)?;
     let mut ret = 0;
-    let level_tree = match args.level {
+    let level_tree = match args.leveldir {
         Some(level) => level as u8,
         None => 4,
     };

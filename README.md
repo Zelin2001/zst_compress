@@ -52,12 +52,12 @@ This will work for **Linux**, **Windows**, **macOS** with different chips.
 Usage: zst_extract.exe [OPTIONS]
 
 Options:
-  -p, --preserve         Preseve original files after compression
-  -f, --flag             Leave flag text pointing to compression target
-  -i, --input <INPUT>    Select a single input file instead of ./*
-  -x                     Extract file from batch archived
-  -l, --level <LEVEL>    Select recursive level for listing directory, default to 4
-  -t, --target <TARGET>  Target location for oprated files, default to current
-  -h, --help             Print help
-  -V, --version          Print version
+  -p, --preserve            Preseve original files after compression
+  -f, --flag                Leave flag text pointing to compression target
+  -i, --input <INPUT>       Select a single input file instead of ./*
+  -x                        Extract file from batch archived
+  -l, --leveldir <LEVELDIR> Select recursive level for listing directory, default to 4
+  -t, --target <TARGET>     Target location for oprated files, default to current
+  -h, --help                Print help
+  -V, --version             Print version
 ```
