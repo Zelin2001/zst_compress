@@ -19,10 +19,7 @@ static RET_DIR_ERROR: u8 = 3;
 pub fn batch_archive(start_dir: PathBuf, args: Args, compress: bool) -> Result<(), u8> {
     let _guard = DirGuard::new(&start_dir)?;
     let mut ret = 0;
-    let level_tree = match args.leveldir {
-        Some(level) => level as u8,
-        None => 4,
-    };
+    let level_tree = args.leveldir.unwrap_or(4);
 
     match args.input {
         None => {
@@ -56,13 +53,13 @@ pub fn batch_archive(start_dir: PathBuf, args: Args, compress: bool) -> Result<(
                                 }
                             }
                             Err(e) => {
-                                eprintln!("出错了! Error: {}", e);
+                                eprintln!("出错了! Error: {e}");
                                 return Err(RET_DIR_ERROR);
                             }
                         }
                     }
                 }
-                Err(e) => eprintln!("出错了! Error: {}", e),
+                Err(e) => eprintln!("出错了! Error: {e}"),
             }
         }
         Some(s) => {
@@ -123,7 +120,7 @@ pub fn entry_archive(
     };
 
     // Print progress counting
-    print!("({}/{}) ", current, total);
+    print!("({current}/{total}) ");
 
     // Skip filelists and tools
     if f_name.find(S_TOOL) == Some(0)
@@ -132,7 +129,7 @@ pub fn entry_archive(
         || (f_name.len() >= S_FLAG_MESSAGE.len()
             && f_name.rfind(S_FLAG_MESSAGE) == Some(f_name.len() - S_FLAG_MESSAGE.len()))
     {
-        println!("Skip: {}", f_name);
+        println!("Skip: {f_name}");
     }
     // Selected archive files
     else if f_name.len() >= S_ARCHIVE.len()
@@ -140,93 +137,95 @@ pub fn entry_archive(
     {
         // Decompress and clean
         if !compress {
-            print!("Extract: {}", f_name);
+            print!("Extract: {f_name}");
             let _ = stdout().flush();
             let f_ori: &str = match target_dir.clone() {
                 Some(target) => &(target + &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()]),
                 None => &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()],
             };
             let target_dir_str = target_dir.as_deref().unwrap_or(".");
-            if let Err(_) = do_archive(Path::new(f_name), Path::new(target_dir_str), false, None) {
-                eprintln!("出错了! Failed to extract {}", f_name);
+            if do_archive(Path::new(f_name), Path::new(target_dir_str), false, None).is_err() {
+                eprintln!("出错了! Failed to extract {f_name}");
                 return Err(RET_TAR_ERROR);
             }
-            print!(" -> {}\n", f_ori);
+            println!(" -> {f_ori}");
 
             // Remove original file
             if !preserve {
                 let _ = f_remove_print(f_name, false);
-                let f_list: &str = &format!("{}{}", f_ori, S_ARCHILIST);
+                let f_list: &str = &format!("{f_ori}{S_ARCHILIST}");
                 if Path::exists(Path::new(f_list)) {
                     let _ = f_remove_print(f_list, false);
                 }
-                let f_id: &str = &format!("{}{}", f_ori, S_FLAG_MESSAGE);
+                let f_id: &str = &format!("{f_ori}{S_FLAG_MESSAGE}");
                 if Path::exists(Path::new(f_id)) {
                     let _ = f_remove_print(f_id, false);
                 }
             }
         } else {
-            println!("Skip: {}", f_name);
+            println!("Skip: {f_name}");
         }
     }
     // Compress, mark the filelist and clean
-    else {
-        if compress {
-            // Make filelist
-            if f_path.is_dir() {
-                let f_list_name = match target_dir.clone() {
-                    Some(target) => &format!("{}{}{}", target, f_name, S_ARCHILIST),
-                    None => &format!("{}{}", f_name, S_ARCHILIST),
-                };
-
-                if let Err(e) = dir_listing::generate_listing(f_name, f_list_name, level_tree) {
-                    eprintln!("出错了! Error generating directory listing: {}", e);
-                    ret = RET_ITEM_ERROR;
-                }
-            }
-
-            // Compress
-            print!("Compress: {}", f_name);
-            let _ = stdout().flush();
-            let f_out: &str = match target_dir.clone() {
-                Some(target) => &format!("{}{}{}", target, f_name, S_ARCHIVE),
-                None => &format!("{}{}", f_name, S_ARCHIVE),
+    else if compress {
+        // Make filelist
+        if f_path.is_dir() {
+            let f_list_name = match target_dir.clone() {
+                Some(target) => &format!("{target}{f_name}{S_ARCHILIST}"),
+                None => &format!("{f_name}{S_ARCHILIST}"),
             };
-            let target_dir_str = target_dir.as_deref().unwrap_or("");
-            if let Err(_) = do_archive(Path::new(f_name), Path::new(target_dir_str), true, level_zstd) {
-                eprintln!("出错了! Failed to compress {}", f_name);
-                return Err(RET_TAR_ERROR);
-            }
-            print!(" -> {}\n", f_out);
 
-            // Write the indicator text message
-            if flag {
-                let f_name_id = f_name.to_owned() + S_FLAG_MESSAGE;
-                let mut f_id = File::create(&f_name_id)
-                    .expect(&format!("出错了! Failed to create file: {}", &f_name_id));
-                let message = format!(
-                    "- 这是一则数据整理的消息
-
-- 原数据已经压缩，可能移动到新位置: 
-  {}
-",
-                    f_out
-                );
-                f_id.write_all(message.as_bytes()).expect(&format!(
-                    "出错了! Failed to write into file: {}",
-                    &f_name_id
-                ));
+            if let Err(e) = dir_listing::generate_listing(f_name, f_list_name, level_tree) {
+                eprintln!("出错了! Error generating directory listing: {e}");
+                ret = RET_ITEM_ERROR;
             }
-
-            // Remove original file
-            assert!(f_path.exists());
-            assert!(Path::new(f_out).is_file());
-            if !preserve {
-                let _ = f_remove_print(f_name, f_path.is_dir());
-            }
-        } else {
-            println!("Skip: {}", f_name);
         }
+
+        // Compress
+        print!("Compress: {f_name}");
+        let _ = stdout().flush();
+        let f_out: &str = match target_dir.clone() {
+            Some(target) => &format!("{target}{f_name}{S_ARCHIVE}"),
+            None => &format!("{f_name}{S_ARCHIVE}"),
+        };
+        let target_dir_str = target_dir.as_deref().unwrap_or("");
+        if do_archive(
+            Path::new(f_name),
+            Path::new(target_dir_str),
+            true,
+            level_zstd,
+        )
+        .is_err()
+        {
+            eprintln!("出错了! Failed to compress {f_name}");
+            return Err(RET_TAR_ERROR);
+        }
+        println!(" -> {f_out}");
+
+        // Write the indicator text message
+        if flag {
+            let f_name_id = f_name.to_owned() + S_FLAG_MESSAGE;
+            let mut f_id = File::create(&f_name_id)
+                .unwrap_or_else(|_| panic!("出错了! Failed to create file: {}", &f_name_id));
+            let message = format!(
+                "- 这是一则数据整理的消息
+
+    - 原数据已经压缩，可能移动到新位置: 
+      {f_out}
+    "
+            );
+            f_id.write_all(message.as_bytes())
+                .unwrap_or_else(|_| panic!("出错了! Failed to write into file: {}", &f_name_id));
+        }
+
+        // Remove original file
+        assert!(f_path.exists());
+        assert!(Path::new(f_out).is_file());
+        if !preserve {
+            let _ = f_remove_print(f_name, f_path.is_dir());
+        }
+    } else {
+        println!("Skip: {f_name}");
     }
 
     match ret {
@@ -236,7 +235,12 @@ pub fn entry_archive(
 }
 
 /// Implement compression with archive library tar and zstd
-fn do_archive(f_path: &Path, target: &Path, compress: bool, level_zstd: Option<i32>) -> Result<(), u8> {
+fn do_archive(
+    f_path: &Path,
+    target: &Path,
+    compress: bool,
+    level_zstd: Option<i32>,
+) -> Result<(), u8> {
     if compress {
         // Compression path: tar -> zstd
         let output_path = target.join(format!(
@@ -249,14 +253,8 @@ fn do_archive(f_path: &Path, target: &Path, compress: bool, level_zstd: Option<i
 
         // 启动压缩线程
         let compressor = thread::spawn(move || {
-            let mut encoder = zstd::stream::Encoder::new(
-                output_file,
-                match level_zstd {
-                    None => 0,
-                    Some(level) => level,
-                },
-            )
-            .unwrap();
+            let mut encoder =
+                zstd::stream::Encoder::new(output_file, level_zstd.unwrap_or_default()).unwrap();
             let cpus = thread::available_parallelism().unwrap().get();
             encoder.multithread(max(cpus as u32 / 2, 10)).unwrap();
             copy(&mut reader, &mut encoder).unwrap();
@@ -282,7 +280,7 @@ fn do_archive(f_path: &Path, target: &Path, compress: bool, level_zstd: Option<i
     } else {
         // Decompression path: zstd -> tar file -> unpack
         let file_stem = f_path.file_stem().unwrap().to_str().unwrap();
-        let tar_path = target.join(format!("{}.tar", file_stem));
+        let tar_path = target.join(format!("{file_stem}.tar"));
 
         // First decompress to .tar file
         {
@@ -331,7 +329,7 @@ mod dir_listing {
 
         let entries = fs::read_dir(path)?;
         let mut entries: Vec<DirEntry> = entries.filter_map(Result::ok).collect();
-        entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+        entries.sort_by_key(|a| a.file_name());
 
         for entry in entries {
             let metadata = entry.metadata()?;
@@ -440,10 +438,7 @@ fn f_remove_print(f_name: &str, f_is_dir: bool) -> Result<(), std::io::Error> {
         match remove_dir_all(f_name) {
             Ok(_) => Ok(()),
             Err(e) => {
-                eprintln!(
-                    "Error, couldn't remove original directory, {}: {}",
-                    f_name, e
-                );
+                eprintln!("Error, couldn't remove original directory, {f_name}: {e}");
                 Err(e)
             }
         }
@@ -451,7 +446,7 @@ fn f_remove_print(f_name: &str, f_is_dir: bool) -> Result<(), std::io::Error> {
         match remove_file(f_name) {
             Ok(_) => Ok(()),
             Err(e) => {
-                eprintln!("Error, couldn't remove original file, {}: {}", f_name, e);
+                eprintln!("Error, couldn't remove original file, {f_name}: {e}");
                 Err(e)
             }
         }

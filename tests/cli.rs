@@ -100,10 +100,9 @@ fn run_test(
 fn run_setup(test_dir: &PathBuf) -> Result<DirGuard, Box<dyn std::error::Error>> {
     create_dir_all(test_dir)?;
     DirGuard::new(test_dir).map_err(|e| {
-        Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to change directory: {}", e),
-        )) as Box<dyn std::error::Error>
+        Box::new(std::io::Error::other(format!(
+            "Failed to change directory: {e}"
+        ))) as Box<dyn std::error::Error>
     })
 }
 
@@ -167,7 +166,7 @@ fn run_test_files_create() -> Result<(Vec<PathBuf>, Vec<u64>), Box<dyn std::erro
     data.truncate(2_000_000);
     write(&file_input, &data)?;
 
-    return Ok((
+    Ok((
         vec![
             dir_bin_input.clone(),
             dir_text_input.clone(),
@@ -181,7 +180,7 @@ fn run_test_files_create() -> Result<(Vec<PathBuf>, Vec<u64>), Box<dyn std::erro
             metadata(&dir_text_input)?.len(),
             metadata(&file_input)?.len(),
         ],
-    ));
+    ))
 }
 
 /// Verifies file states match expected status after compression/extraction
@@ -225,7 +224,7 @@ fn run_test_files_check(
                 // Verify filelist contents if it exists
                 else if file_index == 4 && path.exists() {
                     let contents = std::fs::read_to_string(path)?;
-                    println!("{}", contents);
+                    println!("{contents}");
                     assert!(
                         contents.contains("data1.bin"),
                         "Filelist should contain 'data1.bin'"
@@ -243,7 +242,7 @@ fn run_test_files_check(
         }
     }
 
-    return Ok(());
+    Ok(())
 }
 
 /// Executes CLI command and verifies output

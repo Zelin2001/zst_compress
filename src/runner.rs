@@ -31,9 +31,6 @@ pub struct Args {
     /// Target location for oprated files; default to current
     #[arg(short, long)]
     pub target: Option<String>,
-    // /// Specific files to operate on
-    // #[arg(short, long)]
-    // pub files: Option<Vec<String>>,
 
     /// Zstandard level, 1(fastest) to 22(smallest);
     /// default to 3
@@ -44,7 +41,7 @@ pub struct Args {
 /// Do the cli parsing
 pub fn cli(mut compress: bool) -> ExitCode {
     let args = Args::parse();
-    if args.x.clone() {
+    if args.x {
         compress = false;
     }
 
