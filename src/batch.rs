@@ -91,7 +91,7 @@ pub fn batch_archive(start_dir: PathBuf, args: Args, compress: bool) -> Result<(
 
 /// Compress or decompress 1 item
 pub fn entry_archive(
-    f_name: &str,
+    f_name_str: &str,
     compress: bool,
     preserve: bool,
     flag: bool,
@@ -103,8 +103,10 @@ pub fn entry_archive(
 ) -> Result<(), u8> {
     let mut ret = 0;
 
-    // Check if is directory
-    let f_is_dir = Path::new(f_name).is_dir();
+    // Check if is directory and get clean name
+    let f_path = Path::new(f_name_str);
+    let f_name = f_path.file_name().unwrap().to_str().unwrap();
+
     // Add slash to target_dir
     let target_dir = match target_dir {
         Some(target)
@@ -171,7 +173,7 @@ pub fn entry_archive(
     else {
         if compress {
             // Make filelist
-            if f_is_dir {
+            if f_path.is_dir() {
                 let f_list_name = match target_dir.clone() {
                     Some(target) => &format!("{}{}{}", target, f_name, S_ARCHILIST),
                     None => &format!("{}{}", f_name, S_ARCHILIST),
@@ -217,10 +219,10 @@ pub fn entry_archive(
             }
 
             // Remove original file
-            assert!(Path::new(f_name).exists());
+            assert!(f_path.exists());
             assert!(Path::new(f_out).is_file());
             if !preserve {
-                let _ = f_remove_print(f_name, f_is_dir);
+                let _ = f_remove_print(f_name, f_path.is_dir());
             }
         } else {
             println!("Skip: {}", f_name);
