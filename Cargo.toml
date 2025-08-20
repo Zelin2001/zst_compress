@@ -5,7 +5,7 @@ edition = "2024"
 description = "Batch compress to or decompress dir/*.tar.zst"
 documentation = "https://docs.rs/zst-compress"
 readme = "README.md"
-license = "GPL-2.0-or-later"
+license = "GPL-2.0+"
 categories = ["command-line-utilities"]
 
 [dependencies]

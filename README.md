@@ -1,16 +1,26 @@
-# Scope
+# zst_compress
+
+[![Crates.io Downloads (latest version)](https://img.shields.io/crates/dv/zst_compress)](https://crates.io/crates/zst_compress)
+![Crates.io License](https://img.shields.io/crates/l/zst_compress)
+[![Crates.io Version](https://img.shields.io/crates/v/zst_compress)](https://crates.io/crates/zst_compress)
+[![GitHub Release](https://img.shields.io/github/v/release/Zelin2001/zst_compress)](https://github.com/Zelin2001/zst_compress)
+[![GitHub Release Date](https://img.shields.io/github/release-date/Zelin2001/zst_compress)](https://github.com/Zelin2001/zst_compress)
+
+Batch compress to or decompress dir/\*.tar.zst
+
+## Scope
 
 - Do zst batch compression within rust.
 
 - Simplify the work for team data maintainers.
 
-# Installation
+## Installation
 
 You could choose to install from pre-built binary or Build from source.
 
-## Install from pre-built binary
+### Install from pre-built binary
 
-### For Windows 10/11 systems
+#### For Windows 10/11 systems
 
 1. Extract `zst_compress-<version>.zip`
 
@@ -21,7 +31,7 @@ You could choose to install from pre-built binary or Build from source.
 
    > If zst_compress.exe was not in Path, just run with absolute path.
 
-### For Linux systems
+#### For Linux systems
 
 1. Extract `zst_compress-<version>.tar.zst` with:
    `tar -xvf zst_compress-<version>.tar.zst`
@@ -31,9 +41,9 @@ You could choose to install from pre-built binary or Build from source.
 2. In terminal emulator, change directory to the archive folder you are working with,
    run `zst_compress -h` and follow the instructions.
 
-## Build from source
+### Build from source
 
-The program was brought with 🦀Rust and therefore can work with most Rust hosts. 
+The program was brought with 🦀Rust and therefore can work with most Rust hosts.
 
 This will work for **Linux**, **Windows**, **macOS** with different chips.
 
@@ -46,18 +56,19 @@ This will work for **Linux**, **Windows**, **macOS** with different chips.
 
 4. Now you are ready to run `zst_compress -h`.
 
-# Usage
+## Usage
 
 ```
 Usage: zst_extract.exe [OPTIONS]
 
 Options:
-  -p, --preserve            Preseve original files after compression
-  -f, --flag                Leave flag text pointing to compression target
-  -i, --input <INPUT>       Select a single input file instead of ./*
-  -x                        Extract file from batch archived
-  -l, --leveldir <LEVELDIR> Select recursive level for listing directory, default to 4
-  -t, --target <TARGET>     Target location for oprated files, default to current
-  -h, --help                Print help
-  -V, --version             Print version
+  -p, --preserve               Preseve original files after compression
+  -f, --flag                   Leave flag text pointing to compression target
+  -i, --input <INPUT>          Select a single input file instead of ./*
+  -x                           Extract file from batch archived
+  -l, --leveldir <LEVELDIR>    Select recursive level for listing directory; default to 4
+  -t, --target <TARGET>        Target location for oprated files; default to current
+  -z, --zstdlevel <ZSTDLEVEL>  Zstandard level, 1(fastest) to 22(smallest); default to 3
+  -h, --help                   Print help
+  -V, --version                Print version
 ```
