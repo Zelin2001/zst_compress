@@ -62,13 +62,13 @@ This will work for **Linux**, **Windows**, **macOS** with different chips.
 Usage: zst_extract.exe [OPTIONS]
 
 Options:
-  -p, --preserve               Preseve original files after compression
-  -f, --flag                   Leave flag text pointing to compression target
-  -i, --input <INPUT>          Select a single input file instead of ./*
+  -p, --preserve               Preseve (not delete) original files after compression
+  -f, --flag                   Leave a text message telling about the compression target
+  -i, --input <INPUT>          Select a single input item (file name) instead of listing all in ./*
   -x                           Extract file from batch archived
-  -l, --leveldir <LEVELDIR>    Select recursive level for listing directory; default to 4
+  -l, --leveldir <LEVELDIR>    Set showing level in the *_archive_filelist.txt log; default to 4
   -t, --target <TARGET>        Target location for oprated files; default to current
-  -z, --zstdlevel <ZSTDLEVEL>  Zstandard level, 1(fastest) to 22(smallest); default to 3
+  -z, --zstdlevel <ZSTDLEVEL>  Zstandard compress level, 1(fastest) to 22(smallest); default to 3
   -h, --help                   Print help
   -V, --version                Print version
 ```

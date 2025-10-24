@@ -7,15 +7,16 @@ use std::process::ExitCode;
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 pub struct Args {
-    /// Preseve original files after compression
+    /// Preseve (not delete) original files after compression
     #[arg(short, long)]
     pub preserve: bool,
 
-    /// Leave flag text pointing to compression target
+    /// Leave a text message telling about the compression target
     #[arg(short, long)]
     pub flag: bool,
 
-    /// Select a single input file instead of ./*
+    /// Select a single input item (file name) instead of
+    /// listing all in ./*
     #[arg(short, long)]
     pub input: Option<String>,
 
@@ -23,7 +24,7 @@ pub struct Args {
     #[arg(short)]
     pub x: bool,
 
-    /// Select recursive level for listing directory;
+    /// Set showing level in the *_archive_filelist.txt log;
     /// default to 4
     #[arg(short, long)]
     pub leveldir: Option<u8>,
@@ -32,7 +33,7 @@ pub struct Args {
     #[arg(short, long)]
     pub target: Option<String>,
 
-    /// Zstandard level, 1(fastest) to 22(smallest);
+    /// Zstandard compress level, 1(fastest) to 22(smallest);
     /// default to 3
     #[arg(short, long)]
     pub zstdlevel: Option<i32>,
