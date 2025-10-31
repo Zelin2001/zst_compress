@@ -11,8 +11,20 @@ Batch compress to or decompress dir/\*.tar.zst
 ## Scope
 
 - Do zst batch compression within rust.
-
 - Simplify the work for team data maintainers.
+
+## Features
+
+- **Glob Pattern Matching**: Support for standard glob patterns (`*`, `?`, `[]`) for file inclusion/exclusion
+- **Regular Expression Support**: Optional regex patterns for advanced file filtering (requires `regex` feature)
+- **Batch Processing**: Efficiently process multiple files in a directory
+- **Cross-platform**: Works on Linux, Windows, and macOS
+
+### Optional Features
+
+| Feature | Description                                                            | Default |
+| ------- | ---------------------------------------------------------------------- | ------- |
+| `regex` | Enable regular expression pattern matching for advanced file filtering | No      |
 
 ## Installation
 

@@ -16,9 +16,13 @@ clap = { version = "4.5.23", features = ["derive"] }
 glob = "0.3.3"
 num_cpus = "1.16.0"
 pipe = "0.4.0"
-regex = "1.12.2"
+regex = { version = "1.12.2", optional = true }
 tar = "0.4.44"
 zstd = { version = "0.13.3", features = ["zstdmt"] }
+
+[features]
+default = []
+regex = ["dep:regex"]
 
 [dev-dependencies]
 assert_cmd = "2.0.12"
