@@ -1,3 +1,3 @@
 fn main() {
-    zst_compress::runner::cli(true);
+    zst_compress::batch_runner::cli();
 }

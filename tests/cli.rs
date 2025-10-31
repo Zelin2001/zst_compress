@@ -1,4 +1,4 @@
-use assert_cmd::Command;
+use assert_cmd::cargo;
 use predicates::prelude::*;
 use std::fs::{create_dir_all, metadata, remove_dir_all, write};
 use std::path::PathBuf;
@@ -9,30 +9,30 @@ fn test_cli() {
     // Run tests
     run_test(
         "tests/data_default",
-        &[],
+        &["."],
         "/2) Compress:",
         &vec![false, false, false, true, true, true],
-        &["-x"],
+        &["-x", "."],
         "/3) Extract:",
         &vec![true, true, true, false, false, false],
     )
     .unwrap();
     run_test(
         "tests/data_preserve",
-        &["-p"],
-        "2) Compress:",
+        &["--preserve", "."],
+        "Compress:",
         &vec![true, true, true, true, true, true],
-        &["-p", "-x"],
-        "/5) Extract:",
+        &["--preserve", "--extract", "."],
+        "Extract:",
         &vec![true, true, true, true, true, true],
     )
     .unwrap();
     run_test(
         "tests/data_single",
-        &["-i", "large_test.bin"],
+        &[".", "--include", "large_test.bin"],
         "(1/1) Compress:",
         &vec![true, true, false, false, false, true],
-        &["-p", "-x"],
+        &[".", "--preserve", "--extract"],
         "/2) Extract:",
         &vec![true, true, true, false, false, true],
     )
@@ -258,7 +258,7 @@ fn run_test_command(
     args: &[&str],
     expected_output: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
+    let mut cmd = cargo::cargo_bin_cmd!(env!("CARGO_PKG_NAME"));
     for arg in args {
         cmd.arg(arg);
     }

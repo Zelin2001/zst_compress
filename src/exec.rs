@@ -1,9 +1,7 @@
-use crate::auxiliary::DirGuard;
-use crate::runner::Args;
 use std::cmp::max;
-use std::fs::{File, read_dir, remove_dir_all, remove_file};
+use std::fs::{File, remove_dir_all, remove_file};
 use std::io::{copy, prelude::*, stdout};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::thread;
 
 // Set the skipped / selected patterns
@@ -12,84 +10,8 @@ static S_ARCHILIST: &str = "_archived-filelist.txt";
 static S_FLAG_MESSAGE: &str = "_archived-message.txt";
 static S_TOOL: &str = "zst_";
 static RET_TAR_ERROR: u8 = 1;
-static RET_ITEM_ERROR: u8 = 2;
-static RET_DIR_ERROR: u8 = 3;
-
-/// Compress or decompress all items in a folder
-pub fn batch_archive(start_dir: PathBuf, args: Args, compress: bool) -> Result<(), u8> {
-    let _guard = DirGuard::new(&start_dir)?;
-    let mut ret = 0;
-    let level_tree = args.leveldir.unwrap_or(4);
-
-    match args.input {
-        None => {
-            let target_dir = if let Some(target) = &args.target {
-                Path::new(target)
-            } else {
-                start_dir.as_path()
-            };
-            // Walk through videos
-            match read_dir(&start_dir) {
-                Ok(entries) => {
-                    let entries: Vec<_> = entries.collect();
-                    let total_items = entries.len();
-                    for (current_item, entry_result) in entries.into_iter().enumerate() {
-                        match entry_result {
-                            Ok(entry) => {
-                                if entry_archive(
-                                    entry.path().as_path(),
-                                    compress,
-                                    args.preserve,
-                                    args.flag,
-                                    level_tree,
-                                    args.zstdlevel,
-                                    target_dir,
-                                    current_item + 1,
-                                    total_items,
-                                ) != Ok(())
-                                {
-                                    ret = RET_ITEM_ERROR
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("出错了! Error: {e}");
-                                return Err(RET_DIR_ERROR);
-                            }
-                        }
-                    }
-                }
-                Err(e) => eprintln!("出错了! Error: {e}"),
-            }
-        }
-        Some(s) => {
-            let f_path = Path::new(&s);
-            let target_dir = if let Some(target) = &args.target {
-                Path::new(target)
-            } else {
-                f_path.parent().ok_or(RET_DIR_ERROR)?
-            };
-            if entry_archive(
-                f_path,
-                compress,
-                args.preserve,
-                args.flag,
-                level_tree,
-                args.zstdlevel,
-                target_dir,
-                1,
-                1,
-            ) != Ok(())
-            {
-                ret = RET_ITEM_ERROR
-            }
-        }
-    }
-
-    match ret {
-        0 => Ok(()),
-        _ => Err(ret),
-    }
-}
+pub static RET_ITEM_ERROR: u8 = 2;
+pub static RET_DIR_ERROR: u8 = 3;
 
 /// Compress or decompress 1 item
 pub fn entry_archive(
@@ -97,11 +19,12 @@ pub fn entry_archive(
     compress: bool,
     preserve: bool,
     flag: bool,
+    target_dir: &Path,
     level_tree: u8,
     level_zstd: Option<i32>,
-    target_dir: &Path,
     current: usize,
     total: usize,
+    dry_run: bool,
 ) -> Result<(), u8> {
     let mut ret = 0;
 
@@ -122,7 +45,7 @@ pub fn entry_archive(
         || (f_name.len() >= S_FLAG_MESSAGE.len()
             && f_name.rfind(S_FLAG_MESSAGE) == Some(f_name.len() - S_FLAG_MESSAGE.len()))
     {
-        println!("Skip: {f_name}");
+        println!("Skip: {:?}", f_path);
     }
     // Selected archive files
     else if f_name.len() >= S_ARCHIVE.len()
@@ -135,14 +58,16 @@ pub fn entry_archive(
             let f_ori_name = &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()];
             let f_ori_buf = target_dir.join(f_ori_name);
             let f_ori = f_ori_buf.as_path();
-            if do_archive(f_path, target_dir, false, None).is_err() {
-                eprintln!("出错了! Failed to extract {:?}", f_path);
-                return Err(RET_TAR_ERROR);
+            if !dry_run {
+                if do_archive(f_path, target_dir, false, None).is_err() {
+                    eprintln!("出错了! Failed to extract {:?}", f_path);
+                    return Err(RET_TAR_ERROR);
+                }
             }
             println!(" -> {:?}", f_ori);
 
             // Remove original file
-            if !preserve {
+            if !preserve && !dry_run {
                 let _ = f_remove_print(f_path, false);
                 let f_list_buf = f_ori.with_file_name(&format!("{f_ori_name}{S_ARCHILIST}"));
                 let f_list = f_list_buf.as_path();
@@ -156,7 +81,7 @@ pub fn entry_archive(
                 }
             }
         } else {
-            println!("Skip: {:?}",f_path);
+            println!("Skip: {:?}", f_path);
         }
     }
     // Compress, mark the filelist and clean
@@ -166,7 +91,8 @@ pub fn entry_archive(
             let f_list_path_buf = target_dir.join(&format!("{f_name}{S_ARCHILIST}"));
             let f_list_path = f_list_path_buf.as_path();
 
-            if let Err(e) = dir_listing::generate_listing(f_path, f_list_path, level_tree) {
+            if let Err(e) = dir_listing::generate_listing(f_path, f_list_path, level_tree, dry_run)
+            {
                 eprintln!(
                     "出错了! Error generating directory listing for {}: {e}",
                     f_path.display()
@@ -179,14 +105,16 @@ pub fn entry_archive(
         print!("Compress: {:?}", f_path);
         let _ = stdout().flush();
         let f_out = target_dir.join(format!("{f_name}{S_ARCHIVE}"));
-        if do_archive(f_path, target_dir, true, level_zstd).is_err() {
-            eprintln!("出错了! Failed to compress {:?}", f_path);
-            return Err(RET_TAR_ERROR);
+        if !dry_run {
+            if do_archive(f_path, target_dir, true, level_zstd).is_err() {
+                eprintln!("出错了! Failed to compress {:?}", f_path);
+                return Err(RET_TAR_ERROR);
+            }
         }
         println!(" -> {:?}", f_out);
 
         // Write the indicator text message
-        if flag {
+        if flag && !dry_run {
             let f_name_id_buf = f_path.with_file_name(format!("{f_name}{S_FLAG_MESSAGE}"));
             let f_name_id = f_name_id_buf.as_path();
             let mut f_id = File::create(&f_name_id)
@@ -204,10 +132,12 @@ pub fn entry_archive(
         }
 
         // Remove original file
-        assert!(f_path.exists());
-        assert!(f_out.is_file());
-        if !preserve {
-            let _ = f_remove_print(f_path, f_path.is_dir());
+        if !dry_run {
+            assert!(f_path.exists());
+            assert!(f_out.is_file());
+            if !preserve {
+                let _ = f_remove_print(f_path, f_path.is_dir());
+            }
         }
     } else {
         println!("Skip: {:?}", f_path);
@@ -297,14 +227,18 @@ mod dir_listing {
         dir_path: &Path,
         output_path: &Path,
         max_depth: u8,
+        dry_run: bool,
     ) -> Result<(), io::Error> {
-        let mut output = fs::File::create(output_path)?;
+        let mut output: Box<dyn Write> = match dry_run {
+            false => Box::new(fs::File::create(output_path)?),
+            true => Box::new(io::sink()),
+        };
         list_directory(dir_path, &mut output, max_depth, 0)
     }
 
     fn list_directory(
         path: &Path,
-        output: &mut fs::File,
+        output: &mut dyn Write,
         max_depth: u8,
         current_depth: u8,
     ) -> io::Result<()> {
