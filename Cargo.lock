@@ -846,6 +846,7 @@ dependencies = [
  "num_cpus",
  "pipe",
  "predicates",
+ "regex",
  "tar",
  "zstd",
 ]

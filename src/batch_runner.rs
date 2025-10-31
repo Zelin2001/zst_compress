@@ -2,6 +2,7 @@ use crate::auxiliary::DirGuard;
 use crate::exec::{RET_DIR_ERROR, RET_ITEM_ERROR, entry_archive};
 use clap::{ArgAction, Parser};
 use glob::Pattern;
+use regex::Regex;
 use std::fs::read_dir;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -19,8 +20,12 @@ pub struct Args {
     pub dryrun: bool,
 
     /// Exclude files matching glob pattern(s)
-    #[arg(short, long, value_name = "NAME_PATTERN", action = ArgAction::Append)]
+    #[arg(short, long, value_name = "PATTERN", action = ArgAction::Append)]
     pub exclude: Option<String>,
+
+    /// Exclude files matching regex pattern(s)
+    #[arg(long, value_name = "PATTERN", action = ArgAction::Append)]
+    pub excludere: Option<String>,
 
     /// Extract files (decompress mode)
     #[arg(short = 'x', long)]
@@ -32,8 +37,12 @@ pub struct Args {
 
     /// Include files matching glob pattern(s)
     /// [default: *]
-    #[arg(short, long, value_name = "NAME_PATTERN", action = ArgAction::Append)]
+    #[arg(short, long, value_name = "PATTERN", action = ArgAction::Append)]
     pub include: Option<String>,
+
+    /// Include files matching regex pattern(s)
+    #[arg(long, value_name = "PATTERN", action = ArgAction::Append)]
+    pub includere: Option<String>,
 
     /// Directory listing depth for logs
     /// in *_archive_filelist.txt [default: 4]
@@ -92,7 +101,13 @@ pub fn batch_archive(args: Args) -> Result<(), u8> {
                 match entry_result {
                     Ok(entry) => {
                         let file_path = entry.path();
-                        if should_process_file(&file_path, &args.include, &args.exclude) {
+                        if should_process_file(
+                            &file_path,
+                            &args.include,
+                            &args.exclude,
+                            &args.includere,
+                            &args.excludere,
+                        ) {
                             valid_entries.push(entry.path());
                         }
                     }
@@ -137,17 +152,20 @@ pub fn batch_archive(args: Args) -> Result<(), u8> {
 }
 
 /// Check if a file path matches the include and exclude patterns
+/// Supports both glob patterns and regular expressions
 fn should_process_file(
     file_path: &Path,
     include_patterns: &Option<String>,
     exclude_patterns: &Option<String>,
+    include_regex_patterns: &Option<String>,
+    exclude_regex_patterns: &Option<String>,
 ) -> bool {
     let file_name = file_path
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("");
 
-    // Check exclude patterns first
+    // Check exclude glob patterns first
     if let Some(exclude) = exclude_patterns {
         if let Ok(pattern) = Pattern::new(exclude) {
             if pattern.matches(file_name) {
@@ -156,12 +174,43 @@ fn should_process_file(
         }
     }
 
-    // Check include patterns (default to "*" if None)
-    let include_pattern = include_patterns.as_deref().unwrap_or("*");
-    if let Ok(pattern) = Pattern::new(include_pattern) {
-        pattern.matches(file_name)
-    } else {
-        // If pattern is invalid, default to processing the file
-        true
+    // Check exclude regex patterns
+    if let Some(exclude_regex) = exclude_regex_patterns {
+        if let Ok(regex) = Regex::new(exclude_regex) {
+            if regex.is_match(file_name) {
+                return false;
+            }
+        }
     }
+
+    // Check include patterns - if any include pattern matches, process the file
+    let mut should_include = false;
+
+    // Check include glob patterns (default to "*" if None)
+    if let Some(include) = include_patterns {
+        if let Ok(pattern) = Pattern::new(include) {
+            if pattern.matches(file_name) {
+                should_include = true;
+            }
+        }
+    } else {
+        // Default behavior: include everything if no include pattern specified
+        should_include = true;
+    }
+
+    // Check include regex patterns
+    if let Some(include_regex) = include_regex_patterns {
+        if let Ok(regex) = Regex::new(include_regex) {
+            if regex.is_match(file_name) {
+                should_include = true;
+            }
+        }
+    }
+
+    // If both include and include regex are None, default to "*"
+    if include_patterns.is_none() && include_regex_patterns.is_none() {
+        should_include = true;
+    }
+
+    should_include
 }

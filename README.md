@@ -65,17 +65,19 @@ Arguments:
   <DIRECTORY>  Directory to start processing
 
 Options:
-  -n, --dryrun              Preview what would be done without executing
-  -e, --exclude <PATTERN>   Exclude files matching glob pattern(s)
-  -x, --extract             Extract files (decompress mode)
-  -f, --flag                Create compression message file on the compression
-  -i, --include <PATTERN>   Include files matching glob pattern(s) [default: *]
-  -l, --leveldir <LEVEL>    Directory listing depth for logs in *_archive_filelist.txt [default: 4]
-  -p, --preserve            Keep original (do not delete) files after compression
-  -q, --quiet               Suppress output except errors (NO FUNCTION)
-  -t, --target <DIRECTORY>  Output directory [default: DIRECTORY to start]
-  -v, --verbose             Show detailed progress information (NO FUNCTION)
-  -z, --zstdlevel <LEVEL>   Zstandard compress level, 1(fastest) to 22(smallest); [default: 3]
-  -h, --help                Print help
-  -V, --version             Print version
+  -n, --dryrun               Preview what would be done without executing
+  -e, --exclude <PATTERN>    Exclude files matching glob pattern(s)
+      --excludere <PATTERN>  Exclude files matching regex pattern(s)
+  -x, --extract              Extract files (decompress mode)
+  -f, --flag                 Create compression message file on the compression
+  -i, --include <PATTERN>    Include files matching glob pattern(s) [default: *]
+      --includere <PATTERN>  Include files matching regex pattern(s)
+  -l, --leveldir <LEVEL>     Directory listing depth for logs in *_archive_filelist.txt [default: 4]
+  -p, --preserve             Keep original (do not delete) files after compression
+  -q, --quiet                Suppress output except errors (NO FUNCTION)
+  -t, --target <DIRECTORY>   Output directory [default: DIRECTORY to start]
+  -v, --verbose              Show detailed progress information (NO FUNCTION)
+  -z, --zstdlevel <LEVEL>    Zstandard compress level, 1(fastest) to 22(smallest); [default: 3]
+  -h, --help                 Print help
+  -V, --version              Print version
 ```
