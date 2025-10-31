@@ -57,7 +57,7 @@ pub struct Args {
     pub verbose: bool,
 
     /// Zstandard compress level, 1(fastest) to 22(smallest);
-    /// [default: 3]
+    /// [default: 5]
     #[arg(short, long, value_name = "LEVEL")]
     pub zstdlevel: Option<i32>,
 }
@@ -114,7 +114,10 @@ pub fn batch_archive(args: Args) -> Result<(), u8> {
                     args.flag,
                     target_dir,
                     level_tree,
-                    args.zstdlevel,
+                    match args.zstdlevel {
+                        Some(level) => level,
+                        None => 5_i32,
+                    },
                     current_item + 1,
                     total_items,
                     args.dryrun,

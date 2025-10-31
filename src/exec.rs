@@ -21,7 +21,7 @@ pub fn entry_archive(
     flag: bool,
     target_dir: &Path,
     level_tree: u8,
-    level_zstd: Option<i32>,
+    level_zstd: i32,
     current: usize,
     total: usize,
     dry_run: bool,
@@ -59,7 +59,7 @@ pub fn entry_archive(
             let f_ori_buf = target_dir.join(f_ori_name);
             let f_ori = f_ori_buf.as_path();
             if !dry_run {
-                if do_archive(f_path, target_dir, false, None).is_err() {
+                if do_archive(f_path, target_dir, false, level_zstd).is_err() {
                     eprintln!("出错了! Failed to extract {:?}", f_path);
                     return Err(RET_TAR_ERROR);
                 }
@@ -154,7 +154,7 @@ fn do_archive(
     f_path: &Path,
     target: &Path,
     compress: bool,
-    level_zstd: Option<i32>,
+    level_zstd: i32,
 ) -> Result<(), u8> {
     if compress {
         // Compression path: tar -> zstd
@@ -169,7 +169,7 @@ fn do_archive(
         // 启动压缩线程
         let compressor = thread::spawn(move || {
             let mut encoder =
-                zstd::stream::Encoder::new(output_file, level_zstd.unwrap_or_default()).unwrap();
+                zstd::stream::Encoder::new(output_file, level_zstd).unwrap();
             let cpus = thread::available_parallelism().unwrap().get();
             encoder.multithread(max(cpus as u32 / 2, 10)).unwrap();
             copy(&mut reader, &mut encoder).unwrap();
