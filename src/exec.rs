@@ -14,6 +14,7 @@ pub static RET_ITEM_ERROR: u8 = 2;
 pub static RET_DIR_ERROR: u8 = 3;
 
 /// Compress or decompress 1 item
+#[allow(clippy::too_many_arguments)]
 pub fn entry_archive(
     f_path: &Path,
     compress: bool,
@@ -58,23 +59,21 @@ pub fn entry_archive(
             let f_ori_name = &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()];
             let f_ori_buf = target_dir.join(f_ori_name);
             let f_ori = f_ori_buf.as_path();
-            if !dry_run {
-                if do_archive(f_path, target_dir, false, level_zstd).is_err() {
-                    eprintln!("出错了! Failed to extract {:?}", f_path);
-                    return Err(RET_TAR_ERROR);
-                }
+            if !dry_run && do_archive(f_path, target_dir, false, level_zstd).is_err() {
+                eprintln!("出错了! Failed to extract {:?}", f_path);
+                return Err(RET_TAR_ERROR);
             }
             println!(" -> {:?}", f_ori);
 
             // Remove original file
             if !preserve && !dry_run {
                 let _ = f_remove_print(f_path, false);
-                let f_list_buf = f_ori.with_file_name(&format!("{f_ori_name}{S_ARCHILIST}"));
+                let f_list_buf = f_ori.with_file_name(format!("{f_ori_name}{S_ARCHILIST}"));
                 let f_list = f_list_buf.as_path();
                 if Path::exists(f_list) {
                     let _ = f_remove_print(f_list, false);
                 }
-                let f_id_buf = f_ori.with_file_name(&format!("{f_ori_name}{S_FLAG_MESSAGE}"));
+                let f_id_buf = f_ori.with_file_name(format!("{f_ori_name}{S_FLAG_MESSAGE}"));
                 let f_id = f_id_buf.as_path();
                 if Path::exists(f_id) {
                     let _ = f_remove_print(f_id, false);
@@ -88,7 +87,7 @@ pub fn entry_archive(
     else if compress {
         // Make filelist
         if f_path.is_dir() {
-            let f_list_path_buf = target_dir.join(&format!("{f_name}{S_ARCHILIST}"));
+            let f_list_path_buf = target_dir.join(format!("{f_name}{S_ARCHILIST}"));
             let f_list_path = f_list_path_buf.as_path();
 
             if let Err(e) = dir_listing::generate_listing(f_path, f_list_path, level_tree, dry_run)
@@ -105,11 +104,9 @@ pub fn entry_archive(
         print!("Compress: {:?}", f_path);
         let _ = stdout().flush();
         let f_out = target_dir.join(format!("{f_name}{S_ARCHIVE}"));
-        if !dry_run {
-            if do_archive(f_path, target_dir, true, level_zstd).is_err() {
-                eprintln!("出错了! Failed to compress {:?}", f_path);
-                return Err(RET_TAR_ERROR);
-            }
+        if !dry_run && do_archive(f_path, target_dir, true, level_zstd).is_err() {
+            eprintln!("出错了! Failed to compress {:?}", f_path);
+            return Err(RET_TAR_ERROR);
         }
         println!(" -> {:?}", f_out);
 
@@ -117,7 +114,7 @@ pub fn entry_archive(
         if flag && !dry_run {
             let f_name_id_buf = f_path.with_file_name(format!("{f_name}{S_FLAG_MESSAGE}"));
             let f_name_id = f_name_id_buf.as_path();
-            let mut f_id = File::create(&f_name_id)
+            let mut f_id = File::create(f_name_id)
                 .unwrap_or_else(|_| panic!("出错了! Failed to create file: {:?}", f_name_id));
             let message = format!(
                 "- 这是一则数据整理的消息
@@ -150,12 +147,7 @@ pub fn entry_archive(
 }
 
 /// Implement compression with archive library tar and zstd
-fn do_archive(
-    f_path: &Path,
-    target: &Path,
-    compress: bool,
-    level_zstd: i32,
-) -> Result<(), u8> {
+fn do_archive(f_path: &Path, target: &Path, compress: bool, level_zstd: i32) -> Result<(), u8> {
     if compress {
         // Compression path: tar -> zstd
         let output_path = target.join(format!(
@@ -168,8 +160,7 @@ fn do_archive(
 
         // 启动压缩线程
         let compressor = thread::spawn(move || {
-            let mut encoder =
-                zstd::stream::Encoder::new(output_file, level_zstd).unwrap();
+            let mut encoder = zstd::stream::Encoder::new(output_file, level_zstd).unwrap();
             let cpus = thread::available_parallelism().unwrap().get();
             encoder.multithread(max(cpus as u32 / 2, 10)).unwrap();
             copy(&mut reader, &mut encoder).unwrap();

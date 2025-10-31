@@ -86,14 +86,14 @@ pub fn batch_archive(args: Args) -> Result<(), u8> {
     let compress = !args.extract;
 
     let start_dir = &args.directory_start;
-    let _guard = DirGuard::new(&start_dir)?;
+    let _guard = DirGuard::new(start_dir)?;
     let target_dir = if let Some(target) = &args.target {
         Path::new(target)
     } else {
         start_dir.as_path()
     };
     // Walk through videos
-    match read_dir(&start_dir) {
+    match read_dir(start_dir) {
         Ok(entries) => {
             let entries: Vec<_> = entries.collect();
             let mut valid_entries: Vec<_> = vec![];
@@ -129,10 +129,7 @@ pub fn batch_archive(args: Args) -> Result<(), u8> {
                     args.flag,
                     target_dir,
                     level_tree,
-                    match args.zstdlevel {
-                        Some(level) => level,
-                        None => 5_i32,
-                    },
+                    args.zstdlevel.unwrap_or(5_i32),
                     current_item + 1,
                     total_items,
                     args.dryrun,
@@ -166,21 +163,19 @@ fn should_process_file(
         .unwrap_or("");
 
     // Check exclude glob patterns first
-    if let Some(exclude) = exclude_patterns {
-        if let Ok(pattern) = Pattern::new(exclude) {
-            if pattern.matches(file_name) {
-                return false;
-            }
-        }
+    if let Some(exclude) = exclude_patterns
+        && let Ok(pattern) = Pattern::new(exclude)
+        && pattern.matches(file_name)
+    {
+        return false;
     }
 
     // Check exclude regex patterns
-    if let Some(exclude_regex) = exclude_regex_patterns {
-        if let Ok(regex) = Regex::new(exclude_regex) {
-            if regex.is_match(file_name) {
-                return false;
-            }
-        }
+    if let Some(exclude_regex) = exclude_regex_patterns
+        && let Ok(regex) = Regex::new(exclude_regex)
+        && regex.is_match(file_name)
+    {
+        return false;
     }
 
     // Check include patterns - if any include pattern matches, process the file
@@ -188,10 +183,10 @@ fn should_process_file(
 
     // Check include glob patterns (default to "*" if None)
     if let Some(include) = include_patterns {
-        if let Ok(pattern) = Pattern::new(include) {
-            if pattern.matches(file_name) {
-                should_include = true;
-            }
+        if let Ok(pattern) = Pattern::new(include)
+            && pattern.matches(file_name)
+        {
+            should_include = true;
         }
     } else {
         // Default behavior: include everything if no include pattern specified
@@ -199,12 +194,11 @@ fn should_process_file(
     }
 
     // Check include regex patterns
-    if let Some(include_regex) = include_regex_patterns {
-        if let Ok(regex) = Regex::new(include_regex) {
-            if regex.is_match(file_name) {
-                should_include = true;
-            }
-        }
+    if let Some(include_regex) = include_regex_patterns
+        && let Ok(regex) = Regex::new(include_regex)
+        && regex.is_match(file_name)
+    {
+        should_include = true;
     }
 
     // If both include and include regex are None, default to "*"
