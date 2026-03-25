@@ -84,12 +84,12 @@ Options:
   -f, --flag                 Create compression message file on the compression
   -i, --include <PATTERN>    Include files matching glob pattern(s) [default: *]
       --includere <PATTERN>  Include files matching regex pattern(s)
-  -l, --leveldir <LEVEL>     Directory listing depth for logs in *_archive_filelist.txt [default: 4]
+  -l, --leveldir <LEVEL>     Directory listing depth for logs in *_archived-filelist.txt [default: 4]
   -p, --preserve             Keep original (do not delete) files after compression
-  -q, --quiet                Suppress output except errors (NO FUNCTION)
+  -q, --quiet                Suppress output except errors
   -t, --target <DIRECTORY>   Output directory [default: DIRECTORY to start]
-  -v, --verbose              Show detailed progress information (NO FUNCTION)
-  -z, --zstdlevel <LEVEL>    Zstandard compress level, 1(fastest) to 22(smallest); [default: 3]
+  -v, --verbose              Show detailed progress information
+  -z, --zstdlevel <LEVEL>    Zstandard compress level, 1(fastest) to 22(smallest); [default: 5]
   -h, --help                 Print help
   -V, --version              Print version
 ```

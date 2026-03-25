@@ -26,6 +26,8 @@ pub fn entry_archive(
     current: usize,
     total: usize,
     dry_run: bool,
+    verbose: bool,
+    quiet: bool,
 ) -> Result<(), u8> {
     let mut ret = 0;
 
@@ -37,7 +39,9 @@ pub fn entry_archive(
         .ok_or(RET_ITEM_ERROR)?;
 
     // Print progress counting
-    print!("({current}/{total}) ");
+    if !quiet {
+        print!("({current}/{total}) ");
+    }
 
     // Skip filelists and tools
     if f_name.find(S_TOOL) == Some(0)
@@ -46,7 +50,9 @@ pub fn entry_archive(
         || (f_name.len() >= S_FLAG_MESSAGE.len()
             && f_name.rfind(S_FLAG_MESSAGE) == Some(f_name.len() - S_FLAG_MESSAGE.len()))
     {
-        println!("Skip: {:?}", f_path);
+        if !quiet {
+            println!("Skip: {:?}", f_path);
+        }
     }
     // Selected archive files
     else if f_name.len() >= S_ARCHIVE.len()
@@ -54,8 +60,10 @@ pub fn entry_archive(
     {
         // Decompress and clean
         if !compress {
-            print!("Extract: {:?}", f_path);
-            let _ = stdout().flush();
+            if !quiet {
+                print!("Extract: {:?}", f_path);
+                let _ = stdout().flush();
+            }
             let f_ori_name = &f_name[0..f_name.rfind(S_ARCHIVE).unwrap()];
             let f_ori_buf = target_dir.join(f_ori_name);
             let f_ori = f_ori_buf.as_path();
@@ -63,24 +71,37 @@ pub fn entry_archive(
                 eprintln!("出错了! Failed to extract {:?}", f_path);
                 return Err(RET_TAR_ERROR);
             }
-            println!(" -> {:?}", f_ori);
+            if !quiet {
+                println!(" -> {:?}", f_ori);
+            }
+            if verbose && !quiet && !dry_run {
+                let dst_size = std::fs::metadata(f_ori).map(|m| m.len()).unwrap_or(0);
+                let src_size = std::fs::metadata(f_path).map(|m| m.len()).unwrap_or(0);
+                let ratio = if dst_size > 0 { src_size as f64 / dst_size as f64 * 100.0 } else { 0.0 };
+                println!("  compressed={src_size}B  extracted={dst_size}B  ratio={ratio:.1}%");
+            }
 
             // Remove original file
             if !preserve && !dry_run {
+                if verbose && !quiet { println!("  Remove: {:?}", f_path); }
                 let _ = f_remove_print(f_path, false);
                 let f_list_buf = f_ori.with_file_name(format!("{f_ori_name}{S_ARCHILIST}"));
                 let f_list = f_list_buf.as_path();
                 if Path::exists(f_list) {
+                    if verbose && !quiet { println!("  Remove: {:?}", f_list); }
                     let _ = f_remove_print(f_list, false);
                 }
                 let f_id_buf = f_ori.with_file_name(format!("{f_ori_name}{S_FLAG_MESSAGE}"));
                 let f_id = f_id_buf.as_path();
                 if Path::exists(f_id) {
+                    if verbose && !quiet { println!("  Remove: {:?}", f_id); }
                     let _ = f_remove_print(f_id, false);
                 }
             }
         } else {
-            println!("Skip: {:?}", f_path);
+            if !quiet {
+                println!("Skip: {:?}", f_path);
+            }
         }
     }
     // Compress, mark the filelist and clean
@@ -98,17 +119,51 @@ pub fn entry_archive(
                 );
                 ret = RET_ITEM_ERROR;
             }
+            if verbose && !quiet && !dry_run && ret == 0 {
+                let f_list_path_buf = target_dir.join(format!("{f_name}{S_ARCHILIST}"));
+                println!("  filelist -> {:?}", f_list_path_buf.as_path());
+            }
         }
 
         // Compress
-        print!("Compress: {:?}", f_path);
-        let _ = stdout().flush();
+        if !quiet {
+            print!("Compress: {:?}", f_path);
+            let _ = stdout().flush();
+        }
         let f_out = target_dir.join(format!("{f_name}{S_ARCHIVE}"));
         if !dry_run && do_archive(f_path, target_dir, true, level_zstd).is_err() {
             eprintln!("出错了! Failed to compress {:?}", f_path);
             return Err(RET_TAR_ERROR);
         }
-        println!(" -> {:?}", f_out);
+        if !quiet {
+            println!(" -> {:?}", f_out);
+        }
+        if verbose && !quiet && !dry_run {
+            fn dir_size_walk(p: &Path) -> u64 {
+                std::fs::read_dir(p).ok().map_or(0, |rd| {
+                    rd.filter_map(Result::ok)
+                      .map(|e| {
+                          let m = e.metadata().ok();
+                          if m.as_ref().map_or(false, |m| m.is_dir()) {
+                              dir_size_walk(&e.path())
+                          } else {
+                              m.map_or(0, |m| m.len())
+                          }
+                      })
+                      .sum()
+                })
+            }
+            let src_size = if f_path.is_dir() {
+                dir_size_walk(f_path)
+            } else {
+                std::fs::metadata(f_path).map(|m| m.len()).unwrap_or(0)
+            };
+            let dst_size = std::fs::metadata(&f_out).map(|m| m.len()).unwrap_or(0);
+            let ratio = if src_size > 0 { dst_size as f64 / src_size as f64 * 100.0 } else { 0.0 };
+            let cpus = thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+            let threads = max(cpus as u32 / 2, 10);
+            println!("  src={src_size}B  dst={dst_size}B  ratio={ratio:.1}%  zstd_level={level_zstd}  threads={threads}");
+        }
 
         // Write the indicator text message
         if flag && !dry_run {
@@ -133,11 +188,14 @@ pub fn entry_archive(
             assert!(f_path.exists());
             assert!(f_out.is_file());
             if !preserve {
+                if verbose && !quiet { println!("  Remove: {:?}", f_path); }
                 let _ = f_remove_print(f_path, f_path.is_dir());
             }
         }
     } else {
-        println!("Skip: {:?}", f_path);
+        if !quiet {
+            println!("Skip: {:?}", f_path);
+        }
     }
 
     match ret {

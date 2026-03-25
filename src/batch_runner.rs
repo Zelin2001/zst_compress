@@ -56,7 +56,7 @@ pub struct Args {
     #[arg(short, long)]
     pub preserve: bool,
 
-    /// Suppress output except errors (NO FUNCTION)
+    /// Suppress output except errors
     #[arg(short, long)]
     pub quiet: bool,
 
@@ -64,7 +64,7 @@ pub struct Args {
     #[arg(short, long, value_name = "DIRECTORY")]
     pub target: Option<PathBuf>,
 
-    /// Show detailed progress information (NO FUNCTION)
+    /// Show detailed progress information
     #[arg(short, long)]
     pub verbose: bool,
 
@@ -134,7 +134,7 @@ pub fn batch_archive(args: Args) -> Result<(), u8> {
                 }
             }
             let total_items = valid_entries.len();
-            if total_items < 1 {
+            if total_items < 1 && !args.quiet {
                 eprintln!("No item in {:?} to process.", &start_dir)
             }
             for (current_item, entry_path) in valid_entries.into_iter().enumerate() {
@@ -149,6 +149,8 @@ pub fn batch_archive(args: Args) -> Result<(), u8> {
                     current_item + 1,
                     total_items,
                     args.dryrun,
+                    args.verbose,
+                    args.quiet,
                 ) != Ok(())
                 {
                     ret = RET_ITEM_ERROR
